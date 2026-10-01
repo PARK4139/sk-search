@@ -3,6 +3,7 @@
 ## 위치
 
 - 구현 코드는 모두 `cores/` 아래에 둔다. `issues/`, `ref/`, `rules/`에 코드를 두지 않는다.
+- one-shot 루트 진입점과 단계 스크립트의 위치·언어별 책임은 `one-shot.md#실행-구조`, `one-shot.md#언어별-책임`을 따른다.
 - `cores/` = Cargo workspace. member는 `common`(lib), `app`(lib+bin), `tests`(통합 테스트) 3개.
 - 기능 코드는 `cores/app/` 안에서 function family 이름과 같은 module로 tree 구조화한다 (위치표: `families.md`).
 - 2개 이상 function family가 사용하는 공통 기능은 `cores/common/`에 둔다.
@@ -45,7 +46,7 @@ cores/
 └─ tests/                      ← 통합 테스트 crate (diagnostics, handover §29)
    ├─ Cargo.toml               ← dev-dependency: common, app
    ├─ tests/{function family}_*.rs
-   └─ scripts/                 ← e2e·캡처 스크립트 (environment.md#검증-스크립트)
+   └─ py/                      ← uv 프로젝트: e2e·캡처·bench (skim_tests, environment.md#검증-스크립트)
 ```
 
 ## 구조 규칙

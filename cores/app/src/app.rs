@@ -293,6 +293,7 @@ fn start_search(app: &mut App, gen: u64) {
     if let Err(reason) = view::validate_root(&app.root) {
         log::write("view", &format!("generation={gen} root rejected: {reason}"));
         clear_results(app, gen, &format!("검색 경로 오류: {reason}"));
+        log_display(app);
         if app.last_root_error.as_deref() != Some(reason.as_str()) && !app.root.is_empty() {
             if let Some(w) = app.window.upgrade() {
                 push_toast(&w, "warning", "검색 경로 오류", &reason);
@@ -362,6 +363,7 @@ fn on_event(app: &mut App, ev: Event) {
             if app.results.total == 0 {
                 clear_preview(app);
             }
+            log_display(app);
             if let Some(w) = app.window.upgrade() {
                 push_toast(&w, "info", "검색 완료", &format!("{} · {total} results", app.query.trim()));
             }
@@ -380,6 +382,15 @@ fn set_stats(app: &App, secs: f64) {
     let Some(w) = app.window.upgrade() else { return };
     w.set_stats(format!("{} 결과 · {} 파일 · {secs:.2}초", app.results.total, app.results.groups.len()).into());
     w.set_status(status_text(&app.tools, app.results.total, secs).into());
+}
+
+/// Evidence of what the panel and status bar show after a search (e2e checks read this).
+fn log_display(app: &App) {
+    let Some(w) = app.window.upgrade() else { return };
+    log::write(
+        "status_bar",
+        &format!("generation={} stats={:?} status={:?}", app.results_gen, w.get_stats().as_str(), w.get_status().as_str()),
+    );
 }
 
 fn refresh_rows(app: &App) {

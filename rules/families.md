@@ -15,7 +15,7 @@ issue 폴더 1단계 이름이자 `cores/app/src/` module 이름이다.
 | toast           | 토스트 | FR-129, 133 / AC-113 | `app/src/toast/`, `app/ui/toast.slint` |
 | status_bar      | 상태표시 | handover §24 status bar, §14 stats | `app/ui/status_bar.slint` |
 | settings        | 설정 | FR-131, handover §20 editor 설정 | `common/src/settings.rs` |
-| diagnostics     | 진단성능 | handover §30 로그, AC-103 측정, handover §29 테스트, 검증 도구 | `common/src/log.rs`, `tests/`, `tests/scripts/` |
+| diagnostics     | 진단성능 | handover §30 로그, AC-103 측정, handover §29 테스트, 검증 도구 | `common/src/log.rs`, `tests/`, `tests/py/` |
 | build_env       | 빌드·실행 환경 | handover §26 의존성, handover §12 rg/sk 준비, 개발 환경 제약 | `Cargo.toml`, `.cargo/` |
 | process         | 작업 절차 | `rules/issue.md` 위반·사고 (제품 코드 무관) | (코드 없음) |
 

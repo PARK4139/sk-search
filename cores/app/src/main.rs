@@ -16,6 +16,12 @@ fn main() -> Result<(), slint::PlatformError> {
         &format!("main window created components={}", skim_search::MAIN_UI_COMPONENTS.join(",")),
     );
 
+    // 1ms timer resolution: the 20ms coalescing timer and the 1ms engine poll would otherwise
+    // wake on the default 15.6ms tick (first-result latency, AC-103). Process-wide while running.
+    // SAFETY: plain winmm call; paired with timeEndPeriod at exit.
+    let period = unsafe { windows::Win32::Media::timeBeginPeriod(1) };
+    log::write("app", &format!("timeBeginPeriod(1) result={}", period));
+
     app::init(&window, app::detect_tools());
     app::register_hotkey();
 
@@ -28,6 +34,10 @@ fn main() -> Result<(), slint::PlatformError> {
     });
     window.show()?;
     let result = slint::run_event_loop_until_quit();
+    // SAFETY: matches the timeBeginPeriod(1) above.
+    unsafe {
+        let _ = windows::Win32::Media::timeEndPeriod(1);
+    }
     match &result {
         Ok(()) => log::write("app", "exit ok"),
         Err(e) => log::write("app", &format!("exit error={e}")),
