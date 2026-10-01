@@ -136,7 +136,8 @@ fn workspace() -> PathBuf {
 
 fn rg_files(root: &Path, scope: &Scope) -> BTreeSet<String> {
     let mut cmd = Command::new(rg_path());
-    cmd.args(["--files-with-matches", "login"]);
+    // Scope only: list files, no content match (fixture contents vary).
+    cmd.arg("--files");
     for g in scope.rg_globs() {
         cmd.args(["--glob", &g]);
     }
@@ -153,7 +154,7 @@ fn rg_applies_scope() {
     let cases: [(&str, &[&str]); 4] = [
         (
             "login !test path:src ext:ts",
-            &["src/api/auth.ts", "src/auth/login.ts", "src/auth/logout.ts"],
+            &["src/api/auth.ts", "src/auth/login.ts", "src/auth/logout.ts", "src/fuzzy.ts"],
         ),
         (
             "login | logout ext:md",
@@ -175,6 +176,7 @@ fn rg_applies_scope() {
                 "src/api/auth.ts",
                 "src/auth/login.ts",
                 "src/auth/logout.ts",
+                "src/fuzzy.ts",
                 "src/readme.md",
                 "srcfile.ts",
             ],
