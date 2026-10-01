@@ -14,13 +14,10 @@ use skim_search::search_engine::executable::{
 };
 use skim_search::MainWindow;
 
-/// `CavemanDrive/3rd_party` found by walking up from this crate.
+use common::paths;
+
 fn third_party() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .map(|d| d.join("3rd_party"))
-        .find(|d| d.join("ripgrep").join("rg.exe").is_file())
-        .expect("3rd_party/ripgrep/rg.exe not found above cores/tests")
+    tests::third_party()
 }
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -35,9 +32,9 @@ fn path_env(dirs: &[&Path]) -> OsString {
 
 #[test]
 fn case_a_configured_path_wins() {
-    let rg = third_party().join("ripgrep").join("rg.exe");
+    let rg = paths::join(&third_party(), paths::RG);
     // PATH also has rg, configured must still win.
-    let env = path_env(&[&third_party().join("ripgrep")]);
+    let env = path_env(&[&third_party().join(paths::RG_DIR)]);
     let tool = detect(&RG, Some(&rg), Some(&env), &[]).unwrap();
     log::write(
         "test",
@@ -51,7 +48,7 @@ fn case_a_configured_path_wins() {
 #[test]
 fn case_b_path_used_when_configured_missing() {
     let empty = temp_dir("b-empty");
-    let env = path_env(&[&empty, &third_party().join("skim")]);
+    let env = path_env(&[&empty, &third_party().join(paths::SK_DIR)]);
     let tool = detect(
         &SK,
         Some(Path::new(r"C:\does-not-exist\sk.exe")),
@@ -71,11 +68,7 @@ fn case_b_path_used_when_configured_missing() {
 fn fallback_found_from_exe_ancestors() {
     let empty = temp_dir("fb-empty");
     // exe path under the repo (file itself need not exist)
-    let exe = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("target")
-        .join("debug")
-        .join("skim-search.exe");
+    let exe = paths::join(&tests::repo_root(), paths::EXE_DEBUG);
     let tool = detect(
         &RG,
         None,
@@ -146,8 +139,8 @@ fn case_c_ui_error_toast_and_status() {
 #[test]
 fn detected_tools_can_search() {
     let tp = third_party();
-    let rg = detect(&RG, Some(&tp.join("ripgrep").join("rg.exe")), None, &[]).unwrap();
-    let sk = detect(&SK, Some(&tp.join("skim").join("sk.exe")), None, &[]).unwrap();
+    let rg = detect(&RG, Some(&paths::join(&tp, paths::RG)), None, &[]).unwrap();
+    let sk = detect(&SK, Some(&paths::join(&tp, paths::SK)), None, &[]).unwrap();
 
     let dir = temp_dir("search");
     std::fs::write(

@@ -14,7 +14,7 @@ import shutil
 import sys
 
 from ..support import capture
-from ..support.common import EXE_DEBUG, SHOTS, TEMP, THIRD_PARTY, AppLog, Checker, Log, cargo_build
+from ..support.common import APP_LOG, EXE_DEBUG, RG, SHOTS, SK, TEMP, AppLog, Checker, Log, cargo_build
 
 
 def main() -> int:
@@ -32,11 +32,12 @@ def main() -> int:
     tmp = TEMP / "skim-search-e2e"
     tmp.mkdir(parents=True, exist_ok=True)
     sysdirs = f"{os.environ['SystemRoot']}\\system32;{os.environ['SystemRoot']}"
-    rg_dir, sk_dir = THIRD_PARTY / "ripgrep", THIRD_PARTY / "skim"
+    rg_dir, sk_dir = RG.parent, SK.parent
 
     def case(name, exe, shot, env, expect):
         applog.mark()
-        code, size = capture.run(exe, SHOTS / shot, env=env)
+        # explicit log path: an exe outside the repository (case C) logs next to itself by default
+        code, size = capture.run(exe, SHOTS / shot, env={**env, "SKIM_SEARCH_LOG": str(APP_LOG)})
         new = applog.new()
         check(f"{name} exit", code == 0, f"exit={code} capture={size}")
         for pattern in expect:
@@ -44,7 +45,7 @@ def main() -> int:
 
     try:
         settings = tmp / "settings.json"
-        settings.write_text(json.dumps({"rg_path": str(rg_dir / "rg.exe"), "sk_path": str(sk_dir / "sk.exe")}), encoding="utf-8")
+        settings.write_text(json.dumps({"rg_path": str(RG), "sk_path": str(SK)}), encoding="utf-8")
         case("case A configured", EXE_DEBUG, "rg-sk-executable-detection_100_caseA.png",
              {"SKIM_SEARCH_SETTINGS": str(settings), "PATH": sysdirs},
              [r"rg detected source=Configured", r"sk detected source=Configured"])

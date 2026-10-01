@@ -11,6 +11,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from skim_search import REL
+
 from .. import security_policy as sp
 
 FAMILY = Path("diagnostics") / "one-shot-failure"
@@ -83,7 +85,7 @@ def _git_same_source(root: Path):
     import subprocess
 
     def same(a: str, b: str) -> bool:
-        r = subprocess.run(["git", "diff", "--quiet", a, b, "--", ".", ":(exclude)issues", ":(exclude)ref/actual"],
+        r = subprocess.run(["git", "diff", "--quiet", a, b, "--", ".", ":(exclude)" + REL["ISSUES"], ":(exclude)" + REL["EVIDENCE"]],
                            cwd=root, capture_output=True)
         return r.returncode == 0
     return same
@@ -91,7 +93,7 @@ def _git_same_source(root: Path):
 
 def _active(root: Path, sha: str, stage: str, item: str, states: tuple[str, ...], same_source) -> Path | None:
     for state in states:
-        for path in sorted((root / "issues" / state / FAMILY).glob("*.md")):
+        for path in sorted((root / REL["ISSUES"] / state / FAMILY).glob("*.md")):
             found = KEY.search(path.read_text(encoding="utf-8"))
             if not found or found["stage"] != stage or found["item"] != item:
                 continue
@@ -102,7 +104,7 @@ def _active(root: Path, sha: str, stage: str, item: str, states: tuple[str, ...]
 
 
 def _add_priority(root: Path, issue_id: str, reason: str) -> None:
-    path = root / "issues" / "priority.md"
+    path = root / REL["PRIORITY"]
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True) if path.exists() else \
         ["| 우선순위 | UUID | 근거 |\n", "|---|---|---|\n"]
     if any(f"| {issue_id} |" in l for l in lines):
@@ -142,7 +144,7 @@ def _record(root, run_dir, *, stage, sha, sha_reason, message, exc_type, repro, 
 
     previous = _active(root, key_sha, stage, item, ("closed",), same_source)
     issue_id = new_id(root)
-    path = root / "issues" / "backlog" / FAMILY / f"{issue_id}.md"
+    path = root / REL["ISSUES"] / "backlog" / FAMILY / f"{issue_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     summary = mask(tail(run_dir, command)) or mask(inner)
     sha_text = sha or f"미확보 ({sha_reason})"

@@ -29,7 +29,7 @@ from ..support.common import (
     WM_SETTEXT, App, AppLog, Checker, Log, capture, cargo_build, class_name, foreground, key_combo, pct,
     post, top_windows_of, user32, visible,
 )
-from ..support.paths import E2E_WS, SAMPLE_TREE
+from ..support.common import E2E_WS, SAMPLE_TREE
 
 class Ui:
     """UI Automation access to one skim-search window (elements found by accessible-label)."""

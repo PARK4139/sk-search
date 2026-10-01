@@ -29,7 +29,7 @@
 
 - commit: 설정된 변경 범위로 커밋하고 SHA를 기록한다. 커밋할 변경이 없으면 현재 HEAD를 사용하고 그 사실을 기록한다.
 - commit 이후 CI 빌드 전에 `#버전-관리`에 따라 에이전트 분류와 버전 배정을 수행한다.
-- CI: 해당 SHA의 소스로 빌드·테스트·검사를 실행하고 모두 통과해야 성공한다.
+- CI: 해당 SHA의 소스로 빌드·테스트·검사를 실행하고 모두 통과해야 성공한다. 첫 단계는 경로 SSOT 일치 검사(`skim_search.gen_paths --check`)다. 빌드는 `RUSTFLAGS=--remap-path-prefix`로 cargo 홈·저장소 경로를 `cargo-home`·`skim-search`로 바꾸고(값은 실행 중 계산, 커밋하지 않음), `--version` 확인 후 exe 안의 사용자 경로(security_policy LOCALPATH)가 1개라도 있으면 실패한다(`exe_path_scan` 이벤트에 개수만 기록).
 - CD: CI가 통과한 SHA에서 만들어진 산출물을 설정된 대상에 배포하고 배포 결과를 확인한다.
 - security: CD 산출물과 push 대상 커밋 범위를 검사한다 (`security.md`).
 - push: security가 통과한 뒤 같은 검증 커밋을 설정된 원격·브랜치로 push한다 (fast-forward만, force 금지). push 직전에 다음을 모두 확인하고 하나라도 어긋나면 push하지 않는다: HEAD·소스 불변(guard), security 결과의 SHA 일치, 패키지 체크섬 일치, `security_policy` 통과(exit 0), 원격 브랜치가 security 검사 시점과 동일. push 후 원격 HEAD가 해당 SHA인지 확인한다.

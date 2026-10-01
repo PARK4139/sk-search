@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 app.workspace = true
+common.workspace = true
 
 [dev-dependencies]
 app.workspace = true

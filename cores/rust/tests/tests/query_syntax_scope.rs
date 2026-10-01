@@ -115,11 +115,7 @@ fn rg_globs_combine_includes_as_and() {
 }
 
 fn rg_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .map(|d| d.join("3rd_party").join("ripgrep").join("rg.exe"))
-        .find(|p| p.is_file())
-        .expect("3rd_party/ripgrep/rg.exe")
+    tests::rg()
 }
 
 /// Common committed fixture + scope-specific path traps.

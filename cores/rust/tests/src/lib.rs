@@ -4,25 +4,32 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use common::paths;
 use skim_search::query_syntax;
 use skim_search::search_engine::engine::{Engine, Event, Request};
 use skim_search::search_engine::ripgrep::Hit;
 
-/// `CavemanDrive/3rd_party/<dir>/<file>` found by walking up from this crate.
-pub fn tool(dir: &str, file: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .map(|d| d.join("3rd_party").join(dir).join(file))
-        .find(|p| p.is_file())
-        .unwrap_or_else(|| panic!("3rd_party/{dir}/{file} not found"))
+/// `CavemanDrive/3rd_party` (paths::THIRD_PARTY) found by walking up from this crate.
+pub fn third_party() -> PathBuf {
+    paths::third_party(Path::new(env!("CARGO_MANIFEST_DIR"))).expect("3rd_party with ripgrep/rg.exe above the repository")
+}
+
+/// A `[third_party]` SSOT value (e.g. `paths::RG`) as an absolute path.
+pub fn tool(rel: &str) -> PathBuf {
+    paths::join(&third_party(), rel)
 }
 
 pub fn rg() -> PathBuf {
-    tool("ripgrep", "rg.exe")
+    tool(paths::RG)
 }
 
 pub fn sk() -> PathBuf {
-    tool("skim", "sk.exe")
+    tool(paths::SK)
+}
+
+/// Repository root (directory containing paths::PATHS_INI).
+pub fn repo_root() -> PathBuf {
+    paths::repo_root(Path::new(env!("CARGO_MANIFEST_DIR"))).expect("repository root")
 }
 
 /// Fresh temp directory unique to this process + name.
@@ -40,7 +47,7 @@ pub fn workspace(name: &str) -> PathBuf {
 }
 
 pub fn copy_sample_tree(destination: &Path) {
-    copy_fixture(Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/sample/tree"), destination);
+    copy_fixture(paths::join(&repo_root(), paths::SAMPLE_TREE), destination);
 }
 
 fn copy_fixture(source: PathBuf, destination: &Path) {

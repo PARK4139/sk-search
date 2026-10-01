@@ -14,10 +14,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import skim_search as paths
+from skim_search import REL
 from skim_search.diagnostics.one_shot import pipeline as p
 
-UV = next((a / "3rd_party/pk_system/uv.exe" for a in p.ROOT.parents if (a / "3rd_party/pk_system/uv.exe").exists()), None)
-GITLEAKS = next((a / "3rd_party/security/gitleaks.exe" for a in p.ROOT.parents if (a / "3rd_party/security/gitleaks.exe").exists()), None)
+UV = Path(paths.UV) if Path(paths.UV).exists() else None
+GITLEAKS = Path(paths.GITLEAKS) if Path(paths.GITLEAKS).exists() else None
 
 
 class PipelineTests(unittest.TestCase):
@@ -28,16 +30,18 @@ class PipelineTests(unittest.TestCase):
         self.root.mkdir()
         self.shared = self.folder / "shared"
         self.shared.mkdir()
-        self.logs = self.root / "ref/actual/logs/one-shot/run"
-        # copy of the real layout: scripts/ entry points, configs/, uv project cores/python
-        shutil.copytree(p.ROOT / "cores/python", self.root / "cores/python",
+        self.logs = self.root / REL["ONE_SHOT_LOGS"] / "run"
+        # copy of the real layout (paths SSOT, entry points, configs, uv project)
+        shutil.copytree(p.ROOT / REL["PYTHON_PROJECT"], self.root / REL["PYTHON_PROJECT"],
                         ignore=shutil.ignore_patterns(".venv", "__pycache__"))
-        shutil.copytree(p.ROOT / "scripts", self.root / "scripts")
-        shutil.copytree(p.ROOT / "configs", self.root / "configs")
-        self.root.joinpath("cores/rust").mkdir(parents=True)  # CI working directory
-        (self.root / ".gitignore").write_text("/target/\nref/actual/\n__pycache__/\n*.pyc\n.venv/\n", encoding="utf-8")
-        self.artifact = self.root / "target/release/skim-search.cmd"
-        builder = self.root / "cores/rust/builder.py"
+        for key in ("SCRIPTS", "CONFIGS"):
+            shutil.copytree(p.ROOT / REL[key], self.root / REL[key])
+        (self.root / REL["PATHS_INI"]).parent.mkdir(parents=True)
+        shutil.copy2(p.ROOT / REL["PATHS_INI"], self.root / REL["PATHS_INI"])
+        self.root.joinpath(REL["CARGO_WORKSPACE"]).mkdir(parents=True)  # CI working directory
+        (self.root / ".gitignore").write_text(f"/{REL['TARGET']}/\n{REL['EVIDENCE']}/\n__pycache__/\n*.pyc\n.venv/\n", encoding="utf-8")
+        self.artifact = self.root / REL["TARGET"] / "release/skim-search.cmd"
+        builder = self.root / REL["CARGO_WORKSPACE"] / "builder.py"
         builder.write_text(
             "import os\nfrom pathlib import Path\np=Path(" + repr(str(self.artifact)) + ")\n"
             "p.parent.mkdir(parents=True,exist_ok=True)\n"
@@ -122,7 +126,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(state["push"]["result"], "pushed")
         self.assertEqual(self.git("ls-remote", "origin", "refs/heads/master").split()[0], state["sha"])
         self.assertTrue(Path(state["release"]).exists())
-        self.assertEqual(Path(state["release"]).parent, self.shared / "skim-search")  # 3rd_party/skim-search/{SHA}
+        self.assertEqual(Path(state["release"]).parent, self.shared / REL["RELEASES"])  # 3rd_party/skim-search/{SHA}
         report = p.read_json(self.logs / "security-report.json")
         self.assertEqual(report["result"], "passed")
         self.assertEqual(report["sha"], state["sha"])
@@ -306,12 +310,12 @@ class PipelineTests(unittest.TestCase):
             runs.append(run)
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             list(pool.map(lambda r: p.assign_version(r, "patch"), runs))
-        entries = p.read_json(self.shared / "skim-search/versions.json")["entries"]
+        entries = p.read_json(self.shared / REL["VERSIONS"])["entries"]
         self.assertEqual({e["version"] for e in entries}, {"0.1.1", "0.1.2"})
 
     def test_push_entry_requires_verified_run(self):
         # PYTHONPATH makes -m import the temporary copy (its ROOT is the temporary repository)
-        env = dict(os.environ, PYTHONPATH=str(self.root / "cores/python/src"))
+        env = dict(os.environ, PYTHONPATH=str(self.root / REL["PYTHON_PROJECT"] / "src"))
         proc = subprocess.run([sys.executable, "-m", "skim_search.diagnostics.one_shot.push",
                                "--config", str(self.config)], cwd=self.folder, capture_output=True, env=env)
         self.assertNotEqual(proc.returncode, 0)
@@ -444,7 +448,7 @@ class PipelineTests(unittest.TestCase):
         run_dir.mkdir()
         args = dict(stage="ci", sha="b" * 40, sha_reason="", message="command failed: cargo (exit 101); command-0123456789ab",
                     exc_type="Failure", repro="one-shot.cmd", run_id="r", new_id=issue_ids.get_issue_id,
-                    guard=lambda: p.lock(self.root / "ref/actual/logs/one-shot/.failure-issue.lock", 30))
+                    guard=lambda: p.lock(self.root / REL["ONE_SHOT_LOGS"] / ".failure-issue.lock", 30))
         results = []
         threads = [threading.Thread(target=lambda: results.append(fi.record(self.root, run_dir, **args))) for _ in range(4)]
         for t in threads:

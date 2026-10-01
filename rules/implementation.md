@@ -84,7 +84,10 @@ cores/python/
 - 위 tree는 목표 형태다. 파일/module은 해당 issue 착수 시 필요한 것만 만든다. 빈 module 선생성 금지.
 - `common/`에는 실제로 2개 이상 function family에서 쓰는 코드만 둔다. 미래 사용을 가정한 선제 공통화 금지.
 - 의존 방향: `tests` → `app` → `common`. 역방향 참조 금지. `app` 내부 module 간 순환 의존 금지.
-- Python 검증 도구의 경로 상수는 `cores/python/tests/support/paths.py` 한 곳에서 정의한다 (언어 중립 SSOT 전환: `build_env/paths-ssot`).
+- 저장소·3rd_party 구조 경로는 `cores/common/paths.ini` 한 곳에서만 정의한다 (`build_env/paths-ssot`). 코드에 구조 경로 문자열이나 `parents[N]` 계산을 쓰지 않는다.
+  - Rust: `common::paths` (`common/build.rs`가 `const &str` 생성). 루트는 실행 중 `paths::repo_root(start)`/`paths::third_party(start)`로 찾고 `paths::join`으로 조합한다. `env!("CARGO_MANIFEST_DIR")`로 만든 절대경로를 앱 코드에 넣지 않는다(테스트의 탐색 시작점으로만 허용).
+  - Python: `from skim_search import KEY` 또는 `skim_search.REL["KEY"]`(상대값). 생성: `python -m skim_search.gen_paths` (`--check`는 test.cmd·one-shot CI 첫 단계). 생성 영역은 문자열 상수만 두고 import하지 않는다(측정: `benchmarks.paths`, 50µs 이하).
+  - 키를 추가하면 `paths.ini`를 고치고 생성기를 실행한다. 200개를 넘으면 경고 → 열거 대신 규칙으로 만들 구조를 검토한다.
 - handover §25의 금지 계층(`manager/`, `repository/`, `service/`, `adapter/`, `domain/`)은 만들지 않는다.
 - 새 function family 추가 시 `families.md` 표를 먼저 갱신한다.
 - handover §25 권장 구조(단일 crate)와 다르다. 사용자 지시(`cores/` tree, 언어별 분리)가 우선한다.

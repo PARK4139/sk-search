@@ -34,8 +34,11 @@ from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[5]  # cores/python/src/skim_search/diagnostics -> repository
-EXCEPTIONS_FILE = ROOT / "configs" / "security-exceptions.json"
+import skim_search as paths  # generated from cores/common/paths.ini (build_env/paths-ssot)
+from skim_search import REL
+
+ROOT = Path(paths.ROOT)
+EXCEPTIONS_FILE = Path(paths.SECURITY_EXCEPTIONS)
 LARGE_BYTES = 5 * 1024 * 1024
 
 SECRET_PATTERNS = [
@@ -62,11 +65,11 @@ EMAIL_ALLOW = [
     re.compile(r"(?i)@(example\.(com|org|net)|localhost|[A-Za-z0-9.\-]+\.(invalid|test|example))$"),
 ]
 FORBIDDEN_PATHS = [
-    "ref/actual/logs/*", "*/.venv/*", ".venv/*", "*/target/*", "target/*", "*/__pycache__/*", "__pycache__/*",
+    REL["LOGS"] + "/*", "*/.venv/*", ".venv/*", "*/" + REL["TARGET"] + "/*", REL["TARGET"] + "/*", "*/__pycache__/*", "__pycache__/*",
     "*.env", ".env", "*/.env.*", "settings.json", "*/skim-search/settings.json",
 ]
 # files allowed even though they match a forbidden pattern
-FORBIDDEN_ALLOW = ["ref/actual/logs/.gitignore"]
+FORBIDDEN_ALLOW = [REL["LOGS"] + "/.gitignore"]
 
 
 @dataclass
@@ -305,7 +308,7 @@ def self_test() -> int:
         expect("SEC-EMAIL content (noreply allowed)", run(), 1, {"SEC-EMAIL"})
         reset_to_remote()
 
-        commit({"ref/actual/logs/run.log": "x\n", "ref/actual/logs/.gitignore": "*\n"}, "logs")
+        commit({REL["LOGS"] + "/run.log": "x\n", REL["LOGS"] + "/.gitignore": "*\n"}, "logs")
         expect("SEC-PATH logs (.gitignore allowed)", run(), 1, {"SEC-PATH"})
         reset_to_remote()
 
@@ -343,7 +346,7 @@ def main() -> int:
     p.add_argument("--branch", default="main")
     p.add_argument("--ref", default="HEAD")
     p.add_argument("--exceptions", type=Path, default=EXCEPTIONS_FILE)
-    p.add_argument("--report-dir", type=Path, default=ROOT / "ref" / "actual" / "logs" / "security")
+    p.add_argument("--report-dir", type=Path, default=Path(paths.SECURITY_LOGS))
     p.add_argument("--self-test", action="store_true")
     a = p.parse_args()
     if a.self_test:

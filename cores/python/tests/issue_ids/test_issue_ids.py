@@ -14,7 +14,10 @@ import unittest
 from unittest.mock import patch
 import uuid
 
-SCRIPT = Path(__file__).resolve().parents[2] / "src/skim_search/diagnostics/issue_ids.py"
+from skim_search import REL
+from skim_search.diagnostics import issue_ids as _module
+
+SCRIPT = Path(_module.__file__)
 spec = importlib.util.spec_from_file_location("issue_ids", SCRIPT)
 ids = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ids)
@@ -43,7 +46,7 @@ class IssueIdTests(unittest.TestCase):
             self.assertEqual(ids.get_issue_id(self.root), values[3])
         with patch.object(ids.uuid, "uuid4", side_effect=candidates[3:]):
             self.assertEqual(ids.get_issue_id(self.root), values[4])
-        events = [json.loads(line) for line in (self.root / "ref/actual/logs/issue-ids.jsonl").read_text().splitlines()]
+        events = [json.loads(line) for line in (self.root / REL["LOGS"] / "issue-ids.jsonl").read_text().splitlines()]
         self.assertEqual(sum(e["event"] == "issue_id_collision" for e in events), 4)
 
     def test_same_candidate_competes_atomically(self):
@@ -108,7 +111,7 @@ class IssueIdTests(unittest.TestCase):
         report = {'calls': len(measurements), 'p50_us': statistics.median(measurements),
                   'p95_us': sorted(measurements)[189], 'max_us': max(measurements),
                   'scope': 'warm in-process API, durable FULL commit and evidence logging'}
-        destination = ids.ROOT / 'ref/actual/logs/issue-id-bench.json'
+        destination = ids.ROOT / REL["LOGS"] / "issue-id-bench.json"
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(json.dumps(report, indent=2), encoding='utf-8')
         files = [path.name for path in (self.root / '.git').glob('issue_ids*')]
@@ -116,7 +119,7 @@ class IssueIdTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    destination = ids.ROOT / "ref/actual/logs/issue-id-tests.log"
+    destination = ids.ROOT / REL["LOGS"] / "issue-id-tests.log"
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("w", encoding="utf-8") as stream:
         result = unittest.TextTestRunner(stream=stream, verbosity=2).run(

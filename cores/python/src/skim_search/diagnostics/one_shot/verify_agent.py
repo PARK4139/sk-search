@@ -14,7 +14,7 @@ def main():
     fixture = PipelineTests()
     fixture.setUp()
     started = time.monotonic()
-    logs = p.ROOT / 'ref/actual/logs/one-shot' / ('agent-live-' + p.uuid.uuid4().hex[:8])
+    logs = p.Path(p.paths.ONE_SHOT_LOGS) / ('agent-live-' + p.uuid.uuid4().hex[:8])
     try:
         fixture.change()
         fixture.git('add', '.')

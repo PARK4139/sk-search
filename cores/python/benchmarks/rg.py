@@ -14,7 +14,7 @@ import sys
 import time
 
 from tests.support.common import RG, TEMP, Log
-from tests.support.paths import SAMPLE_TREE
+from tests.support.common import SAMPLE_TREE
 
 # same arguments as the app (cores/rust/app/src/search_engine/ripgrep.rs)
 BASE = ["--null", "--line-number", "--column", "--no-heading", "--with-filename", "--color", "never",

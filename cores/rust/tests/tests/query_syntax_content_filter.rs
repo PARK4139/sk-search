@@ -1,18 +1,14 @@
 //! issue: query_syntax/content-filter-path-contamination/208c79fb
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use common::log;
 use skim_search::query_syntax::{skim_input_from_rg, SKIM_CONTENT_FILTER_ARGS};
 
-fn tool_path(name: &str, file: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .map(|d| d.join("3rd_party").join(name).join(file))
-        .find(|p| p.is_file())
-        .unwrap_or_else(|| panic!("3rd_party/{name}/{file} not found"))
+fn tool_path(rel: &str) -> PathBuf {
+    tests::tool(rel)
 }
 
 #[test]
@@ -26,7 +22,7 @@ fn skim_content_filter_ignores_path_and_line_metadata() {
     std::fs::write(&path_match_only, "logout();\n").unwrap();
     std::fs::write(&content_match_and_exclude, "logout(); // login\n").unwrap();
 
-    let rg_output = Command::new(tool_path("ripgrep", "rg.exe"))
+    let rg_output = Command::new(tool_path(common::paths::RG))
         .args([
             "--line-number",
             "--column",
@@ -44,7 +40,7 @@ fn skim_content_filter_ignores_path_and_line_metadata() {
     assert_eq!(skim_input.lines().count(), 2);
     assert!(skim_input.lines().all(|line| line.split('\t').count() >= 4));
 
-    let mut sk = Command::new(tool_path("skim", "sk.exe"))
+    let mut sk = Command::new(tool_path(common::paths::SK))
         .arg("--filter")
         .arg("logout !login")
         .args(SKIM_CONTENT_FILTER_ARGS)

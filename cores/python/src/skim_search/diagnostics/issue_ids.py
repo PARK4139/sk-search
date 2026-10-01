@@ -12,14 +12,17 @@ import sqlite3
 import time
 import uuid
 
-ROOT = Path(__file__).resolve().parents[5]  # cores/python/src/skim_search/diagnostics -> repository
+import skim_search as paths  # generated from cores/common/paths.ini (build_env/paths-ssot)
+from skim_search import REL
+
+ROOT = Path(paths.ROOT)
 ID_PATTERN = re.compile(r"[0-9a-f]{8}")
 
 
 def _evidence(root: Path, event: str, **details):
     """Best-effort evidence; reservation safety never depends on logging."""
     try:
-        folder = root / "ref/actual/logs"
+        folder = root / REL["LOGS"]
         folder.mkdir(parents=True, exist_ok=True)
         line = json.dumps({"time_ns": time.time_ns(), "event": event, **details}) + "\n"
         descriptor = os.open(folder / "issue-ids.jsonl", os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
@@ -46,7 +49,7 @@ def _initialize(connection, root, common):
         return
     used = set()
     for state in ("backlog", "working", "closed"):
-        for path in (root / "issues" / state).rglob("*.md"):
+        for path in (root / REL["ISSUES"] / state).rglob("*.md"):
             identity = path.stem.lower()
             if not ID_PATTERN.fullmatch(identity):
                 continue

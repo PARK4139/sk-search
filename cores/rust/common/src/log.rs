@@ -1,13 +1,16 @@
 //! Runtime evidence log (rules/environment.md#증거-경로).
 //!
-//! Default path: `ref/actual/logs/skim-search.log` relative to the repository root.
+//! Default path: `paths::APP_LOG` under the repository root found above the running exe
+//! (dev builds, tests); outside a repository (deployed exe) `skim-search.log` next to the exe.
 //! Override with the `SKIM_SEARCH_LOG` environment variable.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use crate::paths;
 
 static SINK: OnceLock<Mutex<Option<File>>> = OnceLock::new();
 
@@ -15,15 +18,13 @@ pub fn log_path() -> PathBuf {
     if let Some(p) = std::env::var_os("SKIM_SEARCH_LOG") {
         return PathBuf::from(p);
     }
-    // cores/rust/common -> repository root
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("ref")
-        .join("actual")
-        .join("logs")
-        .join("skim-search.log")
+    // found at runtime: no build-machine path is compiled in (build_env/paths-ssot)
+    let exe = std::env::current_exe().unwrap_or_default();
+    let dir = exe.parent().map(Path::to_path_buf).unwrap_or_default();
+    match paths::repo_root(&dir) {
+        Some(root) => paths::join(&root, paths::APP_LOG),
+        None => dir.join("skim-search.log"),
+    }
 }
 
 fn open() -> Option<File> {

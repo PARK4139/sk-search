@@ -40,7 +40,7 @@
 
 | 변수 | 용도 | 기본값 |
 |------|------|--------|
-| `SKIM_SEARCH_LOG` | 런타임 로그 경로 override | `ref/actual/logs/skim-search.log` (`cores/rust/common` 기준 상대 경로) |
+| `SKIM_SEARCH_LOG` | 런타임 로그 경로 override | 저장소 안 exe: `ref/actual/logs/skim-search.log` (실행 중 exe 위에서 `cores/common/paths.ini`로 루트 탐색). 저장소 밖 exe(배포본, e2e case C 복사본): exe 옆 `skim-search.log`. 테스트는 이 변수로 위치를 명시한다 |
 | `SKIM_SEARCH_SETTINGS` | 설정 파일 경로 override | `%APPDATA%\skim-search\settings.json` |
 
 설정 파일 필드: `rg_path`, `sk_path` (없거나 parse 실패 시 기본값, 사유는 로그에 기록).
@@ -72,6 +72,8 @@ uv run --locked python -m unittest discover -s tests -t . -p "test_*.py"
 | `tests.e2e.ui [--no-build] [--latency-runs N] [--strict-latency] [--system-open]` | release exe를 UI Automation으로 조작: 검색, 프리뷰, 저장, Toast, 열기, 단축키, 폴더 선택, 설정 저장·복원, 검색 오류, latency 분포. `CHECK PASS/WARN/FAIL [issue]` 기록. workspace는 `%PUBLIC%\skim-search-e2e` | `e2e-ui.log` |
 | `benchmarks.rg [--runs N]` | rg 단독 실행 시간 (앱 인자 + 옵션 변형) | `bench-rg.log` |
 | `benchmarks.sk [--runs N]` | 미리 실행된 sk의 입력 종료 후 처리 시간 | `bench-sk.log` |
+| `benchmarks.paths [--runs N] [--limit-us 50]` | 생성 경로 상수의 import 비용 (생성 `__init__` vs 빈 `__init__`, 새 프로세스 교대 측정) | `paths-bench.log` |
+| `skim_search.gen_paths [--check]` | `cores/common/paths.ini` → `skim_search/__init__.py` 생성 영역 (check: 불일치 시 exit 1) | `paths-check.log` |
 
 - 공통 모듈 `tests.support.common`: 경로, UTF-8 로그, Checker(종료 코드), 앱 로그 대기, Win32(ctypes), 자기 프로세스만 닫는 `App`.
 
@@ -91,7 +93,7 @@ uv run --locked python -m unittest discover -s tests -t . -p "test_*.py"
 - 화면 캡처는 `PrintWindow`만 사용. `CopyFromScreen`은 겹친 다른 창(사용자 화면)을 캡처한다 (`closed/diagnostics/capture-includes-overlapping-windows/03e79abe`).
 - PowerShell에서 Win32 API에 null 문자열은 `[NullString]::Value` (`$null`은 `""`로 전달됨).
 - PowerShell 5.1에서 로그 읽기는 `Get-Content -Encoding UTF8` (`closed/diagnostics/log-read-mojibake-in-powershell/9dd13927`).
-- Windows 경로가 포함된 파일 수정은 sed/awk 대신 Edit 도구 사용 (`closed/process/script-edit-backslash-mangled/fd494e04`).
+- Windows 경로가 포함된 파일 수정은 sed/awk 대신 Edit 도구 사용 (`closed/process/script-edit-backslash-mangled/fd494e04`). bash heredoc 인라인 Python도 일반 문자열이 `\b`·`\n` 등을 해석하므로, 백슬래시가 있는 치환은 raw 문자열 스크립트 파일 또는 Edit 도구로 하고 `count == 1`을 확인한다 (`closed/process/heredoc-python-escape-mangled/51cebecc`).
 - 스크립트 검증은 저장소 밖 cwd(예: `%TEMP%`)에서 실행한다.
 - bash 폴더 순회는 `shopt -s nullglob` (`closed/process/rename-script-empty-glob-noise/48d4b36b`).
 - 여러 단계 PowerShell e2e는 스크립트 파일로 작성하고, env 해제는 `$env:X = $null` (`closed/process/powershell-command-blocked-by-safety-check/42fdc1e3`).

@@ -6,7 +6,7 @@ use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use common::log;
+use common::{log, paths};
 
 /// Prevents a console window flash when spawning from the GUI process.
 pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -15,19 +15,19 @@ pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 pub struct ToolSpec {
     pub name: &'static str,
     pub file: &'static str,
-    /// Directory under `3rd_party/` used by the fallback search.
+    /// Directory under `paths::THIRD_PARTY` used by the fallback search.
     pub third_party_dir: &'static str,
 }
 
 pub const RG: ToolSpec = ToolSpec {
     name: "rg",
     file: "rg.exe",
-    third_party_dir: "ripgrep",
+    third_party_dir: paths::RG_DIR,
 };
 pub const SK: ToolSpec = ToolSpec {
     name: "sk",
     file: "sk.exe",
-    third_party_dir: "skim",
+    third_party_dir: paths::SK_DIR,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,7 +58,7 @@ pub fn fallback_candidates(spec: &ToolSpec, exe: &Path) -> Vec<PathBuf> {
     for dir in exe.parent().into_iter().flat_map(Path::ancestors) {
         out.push(dir.join(spec.file));
         out.push(
-            dir.join("3rd_party")
+            dir.join(paths::THIRD_PARTY)
                 .join(spec.third_party_dir)
                 .join(spec.file),
         );

@@ -21,9 +21,12 @@ import time
 import uuid
 import zipfile
 
+import skim_search as paths  # generated from cores/common/paths.ini (build_env/paths-ssot)
+from skim_search import REL
+
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[5]  # cores/python/src/skim_search/diagnostics/one_shot -> repository
-STAGE_SCRIPTS = ROOT / "scripts" / "one_shot"
+ROOT = Path(paths.ROOT)
+STAGE_SCRIPTS = Path(paths.ONE_SHOT_SCRIPTS)
 STAGES = ("commit", "ci", "cd", "security", "push")
 # CI modules that inject keyboard input (rules/one-shot.md#키보드-사용-알림)
 KEYBOARD_MODULES = ("tests.e2e.ui",)
@@ -106,14 +109,14 @@ def tool(command):
 def load_config(path, root=ROOT):
     cfg = read_json(path)
     cfg["root"] = str(Path(root).resolve())
-    shared = cfg.get("third_party") or next((str(p / "3rd_party") for p in Path(root).parents if (p / "3rd_party").is_dir()), None)
+    shared = cfg.get("third_party") or next((str(p / REL["THIRD_PARTY"]) for p in Path(root).parents if (p / REL["THIRD_PARTY"] / REL["RG"]).is_file()), None)
     if not shared or not Path(shared).is_dir():
         raise Failure("configure an existing shared third_party directory")
     cfg["third_party"] = str(Path(shared).resolve())
     if cfg.get("gitleaks") == ["gitleaks"] and not shutil.which("gitleaks"):
-        cfg["gitleaks"] = [str(Path(shared) / "security/gitleaks.exe")]
-    for name, folder in (("rg", "ripgrep"), ("sk", "skim")):
-        cfg[name] = str(Path(cfg.get(name, Path(shared) / folder / (name + ".exe"))).resolve())
+        cfg["gitleaks"] = [str(Path(shared) / REL["GITLEAKS"])]
+    for name in ("rg", "sk"):
+        cfg[name] = str(Path(cfg.get(name, Path(shared) / REL[name.upper()])).resolve())
     for name in ("remote", "branch", "commit_message", "initial_version", "initial_base_sha"):
         if not isinstance(cfg.get(name), str) or not cfg[name].strip() or cfg[name].startswith("-"):
             raise Failure(f"invalid setting: {name}")
@@ -196,9 +199,9 @@ class Run:
     def guard(self):
         if self.git("rev-parse", "HEAD") != self.state["sha"]:
             raise Failure("HEAD changed after commit")
-        dirty = self.git("diff", "--name-only", "HEAD", "--", ".", ":(exclude)ref/actual")
+        dirty = self.git("diff", "--name-only", "HEAD", "--", ".", ":(exclude)" + REL["EVIDENCE"])
         extra = self.git("ls-files", "--others", "--exclude-standard")
-        if dirty or any(not p.startswith("ref/actual/") for p in extra.splitlines()):
+        if dirty or any(not p.startswith(REL["EVIDENCE"] + "/") for p in extra.splitlines()):
             raise Failure("uncommitted or changed source after commit")
 
 
@@ -284,7 +287,7 @@ def classify(run, base, target, bump=None):
 def assign_version(run, bump):
     if bump is not None and bump not in LEVELS:
         raise Failure("invalid classification level")
-    store = Path(run.cfg["third_party"]) / "skim-search/versions.json"
+    store = Path(run.cfg["third_party"]) / REL["VERSIONS"]
     with lock(store.with_suffix(".lock"), run.cfg["lock_timeout_seconds"]):
         registry = read_json(store) if store.exists() else {"entries": []}
         entries = registry["entries"]
@@ -319,11 +322,11 @@ def commit(run, bump=None):
         if not Path(cfg[name]).is_file():
             raise Failure(f"dependency missing: {name}")
     candidates = run.git("ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", *cfg["commit_paths"])
-    files = sorted({p for p in candidates.split("\0") if p and not p.startswith("ref/actual/")})
+    files = sorted({p for p in candidates.split("\0") if p and not p.startswith(REL["EVIDENCE"] + "/")})
     for start in range(0, len(files), 60):
         run.git("add", "--all", "--", *files[start:start + 60])
     staged = run.git("diff", "--cached", "--name-only")
-    if any(p.startswith("ref/actual/") for p in staged.splitlines()):
+    if any(p.startswith(REL["EVIDENCE"] + "/") for p in staged.splitlines()):
         raise Failure("generated evidence already staged; unstage before one-shot")
     if staged:
         run.git("commit", "-m", cfg["commit_message"])
@@ -377,21 +380,33 @@ def keyboard_alert(run):
 
 
 def uv(run):
-    return tool([run.cfg.get("uv", shutil.which("uv") or str(Path(run.cfg["third_party"]) / "pk_system/uv.exe"))])[0]
+    return tool([run.cfg.get("uv", shutil.which("uv") or str(Path(run.cfg["third_party"]) / REL["UV"]))])[0]
+
+
+def local_paths_in(exe):
+    """Count account-bearing paths (security_policy LOCALPATH) in a binary; only the count is recorded."""
+    from .. import security_policy as sp
+    return len(sp.LOCALPATH.findall(Path(exe).read_bytes().decode("latin-1")))
 
 
 def ci(run):
     run.guard()
     assignment = run.state["assignment"]
-    rust, python = run.root / "cores/rust", run.root / "cores/python"
+    rust, python = run.root / REL["CARGO_WORKSPACE"], run.root / REL["PYTHON_PROJECT"]
     # Own target dir: a concurrent cargo build in the shared target/ would overwrite the stamped exe.
-    target_dir = run.root / "target" / "one-shot"
+    target_dir = run.root / REL["ONE_SHOT_TARGET"]
+    # Build-machine paths (cargo registry, checkout) must not reach the published exe (build_env/paths-ssot).
+    cargo_home = os.environ.get("CARGO_HOME") or str(Path.home() / ".cargo")
+    remap = f"--remap-path-prefix={cargo_home}=cargo-home --remap-path-prefix={run.root}=skim-search"
     env = dict(os.environ, SKIM_SEARCH_BUILD_SHA=run.state["sha"], SKIM_SEARCH_BUILD_VERSION=assignment["version"],
-               CARGO_TARGET_DIR=str(target_dir))
+               CARGO_TARGET_DIR=str(target_dir), RUSTFLAGS=(os.environ.get("RUSTFLAGS", "") + " " + remap).strip())
     commands = run.cfg.get("ci_commands", [["cargo", "build", "--locked"], ["cargo", "build", "--release", "--locked", "-p", "app"],
                                            ["cargo", "test", "--workspace", "--locked"], ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"]])
     if not commands or any(not isinstance(c, list) or not c for c in commands):
         raise Failure("CI commands not configured")
+    if "ci_commands" not in run.cfg:
+        # first CI step: generated path constants must match the SSOT cores/common/paths.ini
+        run.command([uv(run), "run", "--locked", "python", "-m", "skim_search.gen_paths", "--check"], cwd=python, env=env)
     for command in commands:
         run.command(command, cwd=rust, env=env)
     if "ci_commands" not in run.cfg:
@@ -405,6 +420,10 @@ def ci(run):
     expected = f"skim-search {assignment['version']} {run.state['sha']}"
     if actual != expected:
         raise Failure("release executable SHA/version mismatch")
+    leaks = local_paths_in(exe)
+    run.event(event="exe_path_scan", exe=exe.name, user_paths=leaks)
+    if leaks:
+        raise Failure(f"release executable contains {leaks} local user path string(s)")
     artifacts = run.directory / "artifacts"
     artifacts.mkdir(exist_ok=True)
     for name, source in (("skim-search.exe", exe), ("rg.exe", Path(run.cfg["rg"])), ("sk.exe", Path(run.cfg["sk"]))):
@@ -450,7 +469,7 @@ def cd(run):
     for name, digest in run.state["artifacts"].items():
         if sha256(artifacts / name) != digest:
             raise Failure("CI artifact changed before CD")
-    releases = Path(run.cfg["third_party"]) / "skim-search"  # 3rd_party/skim-search/{full SHA}/
+    releases = Path(run.cfg["third_party"]) / REL["RELEASES"]  # {RELEASES}/{full SHA}/
     releases.mkdir(parents=True, exist_ok=True)
     target = releases / run.state["sha"]
     version = run.state["assignment"]["version"]
@@ -506,14 +525,14 @@ def security(run):
         for name, command in (("gitleaks", [*tool(cfg.get("gitleaks", ["gitleaks"])), "version"]),
                               ("cargo_audit", [*tool(cfg.get("cargo_audit", ["cargo", "audit"])), "--version"])):
             report.setdefault("tools", {})[name] = run.command(command)[1]
-        code, cargo_result = run.command([*tool(cfg.get("cargo_audit", ["cargo", "audit"])), "--json", "--file", run.root / "cores/rust/Cargo.lock"], cwd=run.root / "cores/rust", check=False, sensitive=True)
+        code, cargo_result = run.command([*tool(cfg.get("cargo_audit", ["cargo", "audit"])), "--json", "--file", run.root / REL["RUST_LOCK"]], cwd=run.root / REL["CARGO_WORKSPACE"], check=False, sensitive=True)
         cargo = json.loads(cargo_result)
         write_json(run.directory / "cargo-audit.json", cargo)
         if code or "vulnerabilities" not in cargo or cargo["vulnerabilities"].get("found"):
             raise Failure("Rust dependency audit failed or found vulnerabilities")
         report["checks"]["cargo_audit"] = "passed"
         requirements = run.directory / "requirements.txt"
-        run.command([uv(run), "export", "--project", run.root / "cores/python", "--locked", "--no-dev", "--no-emit-project",
+        run.command([uv(run), "export", "--project", run.root / REL["PYTHON_PROJECT"], "--locked", "--no-dev", "--no-emit-project",
                      "--format", "requirements-txt", "--output-file", requirements], sensitive=True)
         output = run.directory / "pip-audit.json"
         output.unlink(missing_ok=True)
@@ -559,7 +578,7 @@ def push(run):
     code, _ = run.command([sys.executable, HERE.parent / "security_policy.py", "--repo", run.root, "--remote", cfg["remote"],
                            "--branch", cfg["branch"], "--ref", sha], check=False)
     if code != 0:
-        raise Failure(f"security_policy blocked the push (exit {code}); see ref/actual/logs/security/")
+        raise Failure(f"security_policy blocked the push (exit {code}); see {REL['SECURITY_LOGS']}/")
     if remote_head(run) != checked.get("remote_base_sha"):
         raise Failure("remote branch changed after the security check")
     run.git("push", cfg["remote"], f"{sha}:refs/heads/{cfg['branch']}")  # fast-forward only, never forced
@@ -595,12 +614,12 @@ def execute_stage(run, stage, bump=None):
 
 def main(stage=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, default=ROOT / "configs" / "one-shot.json")
+    parser.add_argument("--config", type=Path, default=Path(paths.ONE_SHOT_CONFIG))
     parser.add_argument("--run-dir", type=Path, help="use an existing run for an independent stage")
     parser.add_argument("--bump", choices=LEVELS, help="explicit classification; skip agent")
     parser.add_argument("--stop-after", choices=STAGES, default="push")
     args = parser.parse_args()
-    directory = (args.run_dir or ROOT / "ref/actual/logs/one-shot" / (datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8])).resolve()
+    directory = (args.run_dir or Path(paths.ONE_SHOT_LOGS) / (datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8])).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     try:
         cfg = load_config(args.config.resolve())
@@ -611,7 +630,7 @@ def main(stage=None):
         if stage and nested:
             execute_stage(run, stage, args.bump)
         else:
-            with lock(ROOT / "ref/actual/logs/one-shot/.pipeline.lock", cfg["lock_timeout_seconds"]):
+            with lock(Path(paths.ONE_SHOT_LOGS) / ".pipeline.lock", cfg["lock_timeout_seconds"]):
                 if stage:
                     execute_stage(run, stage, args.bump)
                 else:
@@ -656,7 +675,7 @@ def report_failure(directory, stage, args, exc):
         path, created = failure_issue.record(
             ROOT, directory, stage=name, sha=sha, sha_reason=reason, message=str(exc),
             exc_type=type(exc).__name__, repro=repro, run_id=directory.name, new_id=issue_ids.get_issue_id,
-            guard=lambda: lock(ROOT / "ref/actual/logs/one-shot/.failure-issue.lock", 60))
+            guard=lambda: lock(Path(paths.ONE_SHOT_LOGS) / ".failure-issue.lock", 60))
         print(f"failure issue {'created' if created else 'updated'}: {path.relative_to(ROOT).as_posix()}", file=sys.stderr)
     except Exception as error:  # noqa: BLE001 - never mask the original failure
         print(f"failure issue not saved: {error!r}", file=sys.stderr)

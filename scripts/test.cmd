@@ -39,7 +39,10 @@ if not defined UV (
 
 pushd "%ROOT%\cores\python"
 
-echo [run ] python tool tests (one-shot pipeline, issue IDs, security policy)
+echo [run ] path SSOT check (cores\common\paths.ini -^> skim_search constants)
+%PY% skim_search.gen_paths --check > "%LOGS%\paths-check.log" 2>&1 || set "FAILED=%FAILED% [paths check]"
+
+echo [run ] python tool tests (one-shot pipeline, issue IDs, security policy, paths)
 %PY% unittest discover -s tests -t . -p "test_*.py" > "%LOGS%\python-unittest.log" 2>&1 || set "FAILED=%FAILED% [python unittest]"
 
 echo [run ] e2e rg/sk detection
@@ -48,9 +51,11 @@ echo [run ] e2e rg/sk detection
 echo [run ] e2e UI (release exe, UI Automation)
 %PY% tests.e2e.ui --no-build > "%LOGS%\e2e-ui.out.log" 2>&1 || set "FAILED=%FAILED% [e2e UI]"
 
-echo [run ] bench rg / sk
+echo [run ] bench rg / sk / paths
 %PY% benchmarks.rg > "%LOGS%\bench-rg.out.log" 2>&1 || set "FAILED=%FAILED% [bench rg]"
 %PY% benchmarks.sk > "%LOGS%\bench-sk.out.log" 2>&1 || set "FAILED=%FAILED% [bench sk]"
+rem regression guard only (process-noise margin); the 50us target is measured with benchmarks.paths defaults
+%PY% benchmarks.paths --limit-us 100 > "%LOGS%\bench-paths.out.log" 2>&1 || set "FAILED=%FAILED% [bench paths]"
 
 popd
 

@@ -20,10 +20,26 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from .paths import (
-    APP_LOG, CORES, EXE_DEBUG, EXE_RELEASE, LOGS, REPO, RG, SHOTS, SK,
-    TEMP, THIRD_PARTY, WINDOW_TITLE,
-)
+import skim_search as paths  # generated from cores/common/paths.ini (build_env/paths-ssot)
+
+REPO = Path(paths.ROOT)
+THIRD_PARTY = Path(paths.THIRD_PARTY)
+RG = Path(paths.RG)
+SK = Path(paths.SK)
+CORES = Path(paths.CARGO_WORKSPACE)  # cargo runs here
+SAMPLE_TREE = Path(paths.SAMPLE_TREE)
+LOGS = Path(paths.LOGS)
+SHOTS = Path(paths.SHOTS)
+APP_LOG = Path(paths.APP_LOG)
+# CARGO_TARGET_DIR (one-shot builds into target/one-shot) wins over the SSOT default
+TARGET = Path(os.environ.get("CARGO_TARGET_DIR") or paths.TARGET)
+EXE_DEBUG = TARGET / "debug" / "skim-search.exe"
+EXE_RELEASE = TARGET / "release" / "skim-search.exe"
+WINDOW_TITLE = "skim-search"
+TEMP = Path(os.environ.get("TEMP", REPO))
+# Shown in the search-root box of committed screenshots: must not contain the Windows account name
+# (rules/security.md SEC-LOCALPATH), so not under %TEMP%/%USERPROFILE%.
+E2E_WS = Path(os.environ.get("PUBLIC", r"C:\Users\Public")) / "skim-search-e2e"
 
 # console output in UTF-8 regardless of the code page (log files are always UTF-8)
 for _stream in (sys.stdout, sys.stderr):
