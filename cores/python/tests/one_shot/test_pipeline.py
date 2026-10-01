@@ -17,6 +17,7 @@ from unittest.mock import patch
 import skim_search as paths
 from skim_search import REL
 from skim_search.diagnostics.one_shot import pipeline as p
+from skim_search.diagnostics.one_shot.failure_issue import FAMILY as FAILURE_FAMILY
 
 UV = Path(paths.UV) if Path(paths.UV).exists() else None
 GITLEAKS = Path(paths.GITLEAKS) if Path(paths.GITLEAKS).exists() else None
@@ -116,7 +117,7 @@ class PipelineTests(unittest.TestCase):
     def test_full_wrappers_push_verified_sha_to_temporary_remote(self):
         # the remote is a temporary bare repository; the real origin is never used
         self.change()
-        proc = subprocess.run([os.environ["COMSPEC"], "/d", "/c", "call", str(self.root / "scripts/one-shot.cmd"),
+        proc = subprocess.run([os.environ["COMSPEC"], "/d", "/c", "call", str(self.root / REL["SCRIPTS"] / "one-shot.cmd"),
                                "--config", str(self.config), "--run-dir", str(self.logs)],
                               cwd=self.folder, env=self.env, capture_output=True, timeout=120)
         self.assertEqual(proc.returncode, 0, proc.stdout.decode(errors="replace") + proc.stderr.decode(errors="replace"))
@@ -133,7 +134,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_stop_after_security_preserves_remote(self):
         self.change()
-        proc = subprocess.run([os.environ["COMSPEC"], "/d", "/c", "call", str(self.root / "scripts/one-shot.cmd"),
+        proc = subprocess.run([os.environ["COMSPEC"], "/d", "/c", "call", str(self.root / REL["SCRIPTS"] / "one-shot.cmd"),
                                "--config", str(self.config), "--run-dir", str(self.logs), "--stop-after", "security"],
                               cwd=self.folder, env=self.env, capture_output=True, timeout=120)
         self.assertEqual(proc.returncode, 0, proc.stdout.decode(errors="replace") + proc.stderr.decode(errors="replace"))
@@ -368,12 +369,12 @@ class PipelineTests(unittest.TestCase):
 
     # ── failure issue (SSOT, no failure.json) ──
     def one_shot(self, run_dir, *extra):
-        return subprocess.run([os.environ["COMSPEC"], "/d", "/c", "call", str(self.root / "scripts/one-shot.cmd"),
+        return subprocess.run([os.environ["COMSPEC"], "/d", "/c", "call", str(self.root / REL["SCRIPTS"] / "one-shot.cmd"),
                                "--config", str(self.config), "--run-dir", str(run_dir), "--bump", "patch", *extra],
                               cwd=self.folder, env=self.env, capture_output=True, timeout=180)
 
     def failure_issues(self):
-        return sorted((self.root / "issues/backlog/diagnostics/one-shot-failure").glob("*.md"))
+        return sorted((self.root / REL["ISSUES"] / "backlog" / FAILURE_FAMILY).glob("*.md"))
 
     def test_failure_creates_one_masked_issue_and_updates_on_recurrence(self):
         # fixture values are assembled at runtime so this source never contains them
@@ -395,7 +396,7 @@ class PipelineTests(unittest.TestCase):
         self.assertNotIn("Alice", text)
         self.assertNotIn(token, text)
         self.assertFalse(list(self.folder.rglob("failure.json")))
-        priority = (self.root / "issues/priority.md").read_text(encoding="utf-8")
+        priority = (self.root / REL["PRIORITY"]).read_text(encoding="utf-8")
         self.assertEqual(priority.count(f"| {issues[0].stem} |"), 1)
         # same SHA + stage + item: the active issue gets a recurrence entry, no new file or row
         second = self.one_shot(self.folder / "run2")
@@ -404,7 +405,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.failure_issues(), issues)
         text = issues[0].read_text(encoding="utf-8")
         self.assertEqual(text.count("- 재발 "), 1)
-        self.assertEqual((self.root / "issues/priority.md").read_text(encoding="utf-8").count(f"| {issues[0].stem} |"), 1)
+        self.assertEqual((self.root / REL["PRIORITY"]).read_text(encoding="utf-8").count(f"| {issues[0].stem} |"), 1)
 
     def test_failure_before_sha_and_save_failure(self):
         cfg = p.read_json(self.config)
@@ -417,8 +418,8 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("sha=미확보 | stage=setup |", text)
         self.assertIn("미확보 (commit 단계 이전 실패)", text)
         # issue cannot be saved (backlog family path is a file): original failure and exit code stay
-        shutil.rmtree(self.root / "issues/backlog/diagnostics")
-        (self.root / "issues/backlog/diagnostics").write_text("blocker", encoding="utf-8")
+        shutil.rmtree(self.root / REL["ISSUES"] / "backlog" / FAILURE_FAMILY.parent)
+        (self.root / REL["ISSUES"] / "backlog" / FAILURE_FAMILY.parent).write_text("blocker", encoding="utf-8")
         cfg["ci_commands"] = [[sys.executable, "-c", "raise SystemExit(4)"]]
         cfg["remote"] = "origin"
         p.write_json(self.config, cfg)
@@ -459,13 +460,13 @@ class PipelineTests(unittest.TestCase):
         [issue] = self.failure_issues()
         self.assertEqual(issue.read_text(encoding="utf-8").count("- 재발 "), 3)
         # once closed, a recurrence creates a new backlog issue that links the closed one
-        closed = self.root / "issues/closed/diagnostics/one-shot-failure" / issue.name
+        closed = self.root / REL["ISSUES"] / "closed" / FAILURE_FAMILY / issue.name
         closed.parent.mkdir(parents=True)
         issue.rename(closed)
         path, created = fi.record(self.root, run_dir, **args)
         self.assertTrue(created)
         self.assertNotEqual(path.name, closed.name)
-        self.assertIn("이전 기록: `issues/closed/diagnostics/one-shot-failure/", path.read_text(encoding="utf-8"))
+        self.assertIn(f"이전 기록: `{REL['ISSUES']}/closed/{FAILURE_FAMILY.as_posix()}/", path.read_text(encoding="utf-8"))
         self.assertNotIn("- 재발 ", closed.read_text(encoding="utf-8").split("- 재발 ", 1)[0] + "")
 
 
