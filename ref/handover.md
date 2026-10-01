@@ -93,267 +93,53 @@ First Result Target    : <= 50ms
 
 ## 3.2 Latest Query Wins
 
-예:
-
-```text
-generation 101 → log
-generation 102 → logi
-generation 103 → login
-```
-
-현재 generation이 `103`이면 101/102 결과는 늦게 도착하더라도 반드시 폐기한다.
-
-권장:
-
-```rust
-current_generation: AtomicU64
-```
-
-동일 목적의 더 단순하고 안전한 구현도 허용한다.
-
-핵심 규칙:
-
-```text
-old result must never overwrite latest query result
-```
+> 이관됨 (2026-10-01) → issues: `search_engine/stale-result-overwrites-latest`, `diagnostics/latest-query-wins-tests`
 
 ## 3.3 검색 취소
 
-Query가 변경되면 현재 검색을 즉시 취소한다.
-
-```text
-old rg.exe → terminate
-old sk.exe → terminate
-old async task → cancel/ignore
-```
-
-프로세스 누적을 허용하지 않는다.
+> 이관됨 (2026-10-01) → issues: `search_engine/stale-rg-sk-process-accumulation`
 
 ---
 
 # 4. 검색 버튼 제거
 
-검색 버튼은 존재하지 않는다.
-
-```text
-[ 🔍 login path:src ]
-```
-
-Query 변경 자체가 검색 trigger다.
+> 이관됨 (2026-10-01) → issues: `view/main-ui-components-missing`, `search_engine/auto-search-on-input`
 
 ---
 
 # 5. 검색 경로
 
-UI 최상단에 조회 기준이 되는 상위 디렉터리 입력 요소 1개를 둔다.
-
-```text
-검색 경로
-[ D:\Projects\my-project                         ] [찾아보기]
-```
-
-규칙:
-
-- 입력값은 directory여야 한다.
-- 존재하지 않는 경로면 검색하지 않는다.
-- file path이면 검색하지 않는다.
-- 검색 범위는 해당 directory의 모든 하위 directory다.
-- Folder Picker 제공.
-- 검색 경로 변경 시 현재 Query로 재검색.
-- 최근 검색 경로는 설정으로 보존.
+> 이관됨 (2026-10-01) → issues: `view/search-root-validation-missing`, `view/include-subfolders-checkbox-conflict`, `view/folder-picker-missing`, `view/rerun-on-search-root-change-missing`, `settings/recent-search-root-persistence`, `view/main-ui-components-missing`
 
 ---
 
 # 6. Query가 Single Source of Truth
 
-다음 Chip 기반 mode UI는 제거한다.
-
-```text
-Content
-Path
-File
-Ext
-Exclude
-```
-
-모든 검색 기능은 항상 활성화한다.
-
-```text
-login
-!login
-'login
-login | logout
-path:src
-!path:test
-ext:ts
-!ext:json
-```
-
-원칙:
-
-```text
-Query = 검색 조건의 Single Source of Truth
-```
-
-검색창 하단에는 기능 토글 대신 문법 힌트만 표시한다.
-
-```text
-문법: 공백=AND   'exact   !exclude   |=OR   path:src   ext:ts/md
-```
+> 이관됨 (2026-10-01) → issues: `view/main-ui-components-missing`
 
 ---
 
 # 7. 검색 문법
 
-Skim 표현식 사용감을 유지한다.
-
-## 7.1 기본
-
-```text
-login
-```
-
-## 7.2 AND
-
-공백은 AND다.
-
-```text
-login error
-```
-
-의미:
-
-```text
-login AND error
-```
-
-## 7.3 Exact
-
-```text
-'login
-```
-
-Skim exact 조건.
-
-## 7.4 Exclude / NOT
-
-```text
-!login
-```
-
-조합:
-
-```text
-login !test
-```
-
-의미:
-
-```text
-login AND NOT test
-```
-
-## 7.5 OR
-
-```text
-login | logout
-```
-
-의미:
-
-```text
-login OR logout
-```
+> 이관됨 (2026-10-01) → issues: `query_syntax/space-and`, `query_syntax/exact`, `query_syntax/exclude`, `query_syntax/or`, `query_syntax/combined-query`
 
 ---
 
 # 8. skim-search 전용 Scope 문법
 
-Skim content filtering과 별도로 filesystem 검색 범위를 결정한다.
-
-```text
-path:src
-!path:test
-ext:ts
-ext:md
-!ext:json
-```
-
-향후 필요 시:
-
-```text
-file:auth
-!file:test
-```
-
-를 같은 규칙으로 추가 가능하게 parser를 구성한다.
-
-단, v1의 `file:`은 선택 구현이다.
+> 이관됨 (2026-10-01) → issues: `query_syntax/path-include`, `query_syntax/path-exclude`, `query_syntax/ext-include`, `query_syntax/ext-exclude`, `query_syntax/file-token`
 
 ---
 
 # 9. Query Parse 규칙
 
-예:
-
-```text
-login !test path:src ext:ts
-```
-
-분리:
-
-```text
-Skim/content expression:
-    login !test
-
-Scope:
-    include path = src
-    include ext  = ts
-```
-
-또:
-
-```text
-login | logout ext:md
-```
-
-의미:
-
-```text
-(login OR logout)
-AND
-extension == md
-```
-
-`path:`, `!path:`, `ext:`, `!ext:` token은 scope 조건으로 분리하고 나머지를 Skim query로 전달한다.
+> 이관됨 (2026-10-01) → issues: `query_syntax/scope-token-separation`
 
 ---
 
 # 10. Filtering 정확성
 
-`sk.exe`에 아래처럼 path/line/text가 합쳐진 전체 문자열을 검색 대상으로 그대로 넘기지 않는다.
-
-```text
-C:\path\file.ts:12:3:login(...)
-```
-
-그렇게 하면 `!login` 같은 content 조건이 path/file name까지 영향을 줄 수 있다.
-
-요구 의미는 기본적으로 **파일 내용 match**다.
-
-다음 중 안전한 방식을 선택한다.
-
-1. metadata(path/line/column)와 content를 내부적으로 분리하고 `sk`에는 content 중심 payload만 전달
-2. sk의 field/nth 계열 옵션으로 검색 대상 column을 content로 제한
-3. unique result id를 사용해 metadata와 filtered row를 Rust에서 mapping
-
-핵심 규칙:
-
-```text
-Skim content expression은 path metadata 때문에 오염되면 안 된다.
-```
-
-`path:` / `ext:`는 Rust Query Parser + rg scope에서 처리한다.
+> 이관됨 (2026-10-01) → issues: `query_syntax/content-filter-path-contamination`
 
 ---
 
@@ -387,24 +173,7 @@ matched text / line text
 
 # 12. sk.exe 책임
 
-`sk.exe`는 Skim 검색 표현식 filtering 담당.
-
-자체 fuzzy/exact/OR/NOT 엔진을 새로 만들지 않는다.
-
-실행 전:
-
-- `sk.exe` 존재 여부 확인
-- `rg.exe` 존재 여부 확인
-
-실행 파일 탐색 우선순위 예:
-
-```text
-configured path
-→ PATH
-→ 필요한 경우 알려진 fallback
-```
-
-없으면 오류 Toast 표시.
+> 이관됨 (2026-10-01) → issues: `search_engine/rg-sk-executable-detection`, `toast/search-error-toast`
 
 ---
 
@@ -455,262 +224,67 @@ CHANGELOG.md
 
 # 14. Result Panel
 
-좌측 결과를 파일별 그룹화한다.
-
-```text
-128 결과 · 42 파일 · 0.18초
-
-▼ TS src/auth/login.ts         6
-   12  function login(...)
-   23  loginWithToken(...)
-   45  login success
-   78  login failed
-
-> MD docs/login-guide.md       4
-> TS src/api/auth.ts           3
-> RS src/search/engine.rs      2
-```
-
-파일 유형은 짧은 badge/icon으로 구분 가능.
+> 이관됨 (2026-10-01) → issues: `result_panel/group-by-file`, `result_panel/file-type-badge`, `status_bar/result-stats-not-updated`
 
 ---
 
 # 15. Result Panel 전체 갱신
 
-새 검색이 실행되면 첫 그룹 하나만 갱신하면 안 된다.
-
-반드시 아래 전체가 최신 검색 결과로 바뀌어야 한다.
-
-```text
-stats
-file group list
-match count
-visible match lines
-selected result
-```
+> 이관됨 (2026-10-01) → issues: `result_panel/full-panel-refresh`
 
 ---
 
 # 16. Streaming
 
-가능하면 검색 완료까지 기다리지 말고 부분 결과를 UI에 전달한다.
-
-```text
-첫 결과 빠르게 표시
-→ 이후 결과 점진적 추가
-```
-
-단, Latest Query Wins를 항상 우선한다.
-
-이전 generation의 chunk는 즉시 폐기한다.
+> 이관됨 (2026-10-01) → issues: `search_engine/result-streaming`
 
 ---
 
 # 17. Preview
 
-우측 Preview는 read-only가 아니다.
-
-선택한 검색 결과의 파일 내용을 표시하고 직접 수정 가능해야 한다.
-
-지원:
-
-```text
-source code
-Markdown
-plain text
-```
-
-선택 match 위치 주변으로 자동 이동하고 가능하면 line/column highlight를 표시한다.
+> 이관됨 (2026-10-01) → issues: `preview_editor/preview-content-mismatch`, `preview_editor/edit-text-overlap`, `preview_editor/match-scroll-highlight`, `preview_editor/duplicate-line-numbers`, `preview_editor/breadcrumb-not-updated`
 
 ---
 
 # 18. Preview 편집 / 저장
 
-Preview에서 직접 수정.
-
-저장:
-
-```text
-Ctrl + S
-```
-
-성공 시 Toast:
-
-```text
-저장 완료
-src/auth/login.ts
-```
+> 이관됨 (2026-10-01) → issues: `preview_editor/ctrl-s-save`
 
 ---
 
 # 19. 외부 변경 충돌 방지
 
-Preview load 이후 외부 프로그램이 같은 파일을 수정했는데 무조건 overwrite하면 안 된다.
-
-최소 다음 중 하나로 저장 직전 원본 변경 여부를 확인한다.
-
-```text
-mtime
-file size + mtime
-hash
-```
-
-충돌 시:
-
-```text
-파일이 외부에서 변경됨
-```
-
-을 표시하고 자동 overwrite하지 않는다.
+> 이관됨 (2026-10-01) → issues: `preview_editor/external-change-conflict`
 
 ---
 
 # 20. 파일 열기
 
-기존의:
-
-```text
-VS Code에서 열기
-```
-
-는 제거.
-
-최종:
-
-```text
-[ 파일 열기 ]
-```
-
-UI에 특정 Editor 이름을 노출하지 않는다.
-
-내부 설정:
-
-```text
-VSCode
-Cursor
-System Default
-```
-
-VSCode:
-
-```text
-code --goto "file:line:column"
-```
-
-Cursor:
-
-```text
-cursor --goto "file:line:column"
-```
-
-System Default는 Windows Shell open.
+> 이관됨 (2026-10-01) → issues: `external_open/open-file-goto-line-column`, `settings/open-editor-selection`
 
 ---
 
 # 21. 부모경로 열기
 
-버튼:
-
-```text
-[ 부모경로 열기 ]
-```
-
-Windows Explorer에서 현재 파일을 선택한 상태로 연다.
-
-```text
-explorer.exe /select,"D:\Projects\my-project\src\auth\login.ts"
-```
+> 이관됨 (2026-10-01) → issues: `external_open/open-parent-select-file`
 
 ---
 
 # 22. 키보드 UX
 
-```text
-Ctrl + Shift + F
-→ skim-search 실행 / 표시 / query focus
-
-Typing
-→ 자동 검색
-
-↑ / ↓
-→ 결과 이동
-
-Enter
-→ 파일 열기
-
-Ctrl + Enter
-→ 부모경로 열기
-
-Ctrl + S
-→ Preview 저장
-
-Esc
-→ skim-search 숨기기
-```
-
-Enter는 검색 실행에 사용하지 않는다.
+> 이관됨 (2026-10-01) → issues: `shortcut/global-hotkey-ctrl-shift-f`, `shortcut/arrow-key-navigation`, `shortcut/enter-ctrl-enter-actions`, `shortcut/esc-hide`, `preview_editor/ctrl-s-save`, `search_engine/auto-search-on-input`
 
 ---
 
 # 23. Toast
 
-우측 하단 Stack.
-
-```text
-┌────────────────────────┐
-│ 검색 완료              │
-│ 128 results · 0.18s   │
-└────────────────────────┘
-┌────────────────────────┐
-│ 저장 완료              │
-│ login.ts               │
-└────────────────────────┘
-┌────────────────────────┐
-│ 파일 열기              │
-│ login.ts:45            │
-└────────────────────────┘
-```
-
-규칙:
-
-- 최신 Toast가 아래
-- 기존 Toast가 위로 이동
-- 최대 3개
-- 일정 시간 후 자동 제거
-- info/success/warning/error 구분 가능
+> 이관됨 (2026-10-01) → issues: `toast/exceeds-max-three`, `toast/horizontal-overlap`, `toast/auto-dismiss`, `toast/type-distinction`, `toast/search-error-toast`
 
 ---
 
 # 24. 최종 UI
 
-Chip 없음.
-검색 버튼 없음.
-
-```text
-┌───────────────────────────────────────────────────────────────┐
-│ 검색 경로                                                     │
-│ [ D:\Projects\my-project                          ] [찾아보기]│
-│                                                               │
-│ 🔍 login !test path:src ext:ts                                │
-│                                                               │
-│ 문법: 공백=AND  'exact  !exclude  |=OR  path:  ext:           │
-├───────────────────────────────┬───────────────────────────────┤
-│ 128 결과 · 42 파일 · 0.18초  │ src/auth/login.ts        45:3 │
-│                               │                               │
-│ ▼ TS src/auth/login.ts     6  │ [파일 열기] [부모경로 열기] │
-│   12 function login           │                               │
-│   23 loginWithToken           │ Preview / Editor              │
-│   45 login success            │                               │
-│                               │                               │
-│ > MD docs/login-guide.md   4  │                               │
-│ > TS src/api/auth.ts       3  │                               │
-├───────────────────────────────┴───────────────────────────────┤
-│ rg 14.x · sk x.x · 128 results · 0.18 sec                    │
-└───────────────────────────────────────────────────────────────┘
-```
-
-기존 확정 dark theme / VSCode 계열 visual language 유지.
-과도한 animation 금지.
+> 이관됨 (2026-10-01) → issues: `view/main-ui-components-missing`
 
 ---
 
@@ -911,65 +485,13 @@ Preview open 이후 외부 변경 시 저장 단계에서 감지.
 
 # 29. 테스트 요구사항
 
-최소 자동 테스트:
-
-## Query Parser
-
-```text
-login
-login error
-'login
-!login
-login !test
-login | logout
-path:src
-!path:test
-ext:ts
-!ext:json
-login !test path:src ext:ts
-TODO ext:md
-```
-
-Scope token과 Skim expression 분리 검증.
-
-## Latest Query Wins
-이전 검색 결과를 일부러 늦게 반환시켜 최신 generation만 UI model에 반영되는지 테스트.
-
-## Result Parsing
-Windows path 안전 처리:
-
-```text
-C:\Projects\test\src\main.rs
-D:\My Projects\sample file.md
-```
-
-공백 포함 path 필수 지원.
-
-## Save Conflict
-외부 변경을 simulated하여 conflict detection 검증.
+> 이관됨 (2026-10-01) → issues: `diagnostics/query-parser-tests`, `diagnostics/latest-query-wins-tests`, `search_engine/windows-path-with-spaces-parsing`, `diagnostics/save-conflict-tests`
 
 ---
 
 # 30. 로그 / 진단
 
-Debug build에서 최소 추적 가능:
-
-```text
-query generation
-raw query
-parsed skim query
-scope filters
-search root
-rg spawn time
-sk spawn time
-first result latency
-search completed latency
-result count
-cancelled generation
-error
-```
-
-일반 UI는 로그로 오염시키지 않는다.
+> 이관됨 (2026-10-01) → issues: `diagnostics/debug-log-fields`
 
 ---
 
