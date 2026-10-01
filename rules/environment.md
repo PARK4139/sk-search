@@ -33,6 +33,7 @@
 | 화면 증거 | `ref/actual/screenshot/frames/{sub family}_{우선순위}[_{case}].png` |
 
 - `ref/actual/`은 근거가 아니다 (`sources.md`).
+- `ref/actual/logs/`는 로컬 증거다. 공개 저장소에 로컬 경로·PID가 노출되지 않도록 git에 올리지 않는다 (`ref/actual/logs/.gitignore`). 스크린샷은 skim-search 창만 담으므로 git에 포함한다.
 
 ## 환경변수
 
