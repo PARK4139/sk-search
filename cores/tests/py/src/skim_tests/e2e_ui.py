@@ -132,7 +132,8 @@ def main() -> int:
         check("search_engine/auto-search-on-input", True, "query 'login' searched without button/Enter")
         disp = applog.wait(r"\[status_bar\] .*stats=", 3)
         check("status_bar/result-stats-not-updated",
-              bool(disp and 'stats="14 결과 · 7 파일' in disp and re.search(r'status="rg \S+ · sk \S+ · 14 results', disp)), f"{disp}")
+              # sample tree + src/long.ts; src/fuzzy.ts matches "login" fuzzily (l-o-g-i-n)
+              bool(disp and 'stats="15 결과 · 8 파일' in disp and re.search(r'status="rg \S+ · sk \S+ · 15 results', disp)), f"{disp}")
         shot(app, "e2e_login")
 
         # B. preview scrolls to a deep match and highlights it
