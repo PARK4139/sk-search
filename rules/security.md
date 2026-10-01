@@ -34,7 +34,7 @@
 
 - 수동 push 전: `security_policy.cmd` 실행 → 종료 코드 0일 때만 push. 1 = 차단 항목 탐지, 2 = 검사 실행 불가.
 - 자체 테스트: `security_policy.cmd --self-test` (임시 저장소만 사용, 실제 origin에 push하지 않음).
-- one-shot pipeline 연결(push 직전 `security_policy` 호출)은 `diagnostics/one-shot-security-gate` 에서 진행한다.
+- one-shot pipeline 의 push 단계는 push 직전에 `security_policy` 를 호출하고 exit 0 일 때만 push한다 (`one-shot.md#단계와-실패-처리`).
 
 ## 예외
 

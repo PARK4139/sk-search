@@ -4,7 +4,7 @@
   "initial_version": "0.1.0",
   "initial_base_sha": "d158201",
   "remote": "origin",
-  "branch": "master",
+  "branch": "main",
   "codex": ["codex"],
   "gitleaks": ["gitleaks"],
   "cargo_audit": ["cargo", "audit"],

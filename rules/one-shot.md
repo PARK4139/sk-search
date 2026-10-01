@@ -22,7 +22,9 @@
 - commit 이후 CI 빌드 전에 `#버전-관리`에 따라 에이전트 분류와 버전 배정을 수행한다.
 - CI: 해당 SHA의 소스로 빌드·테스트·검사를 실행하고 모두 통과해야 성공한다.
 - CD: CI가 통과한 SHA에서 만들어진 산출물을 설정된 대상에 배포하고 배포 결과를 확인한다.
-- push: CD가 성공한 뒤 같은 검증 커밋을 설정된 원격·브랜치로 push한다.
+- security: CD 산출물과 push 대상 커밋 범위를 검사한다 (`security.md`).
+- push: security가 통과한 뒤 같은 검증 커밋을 설정된 원격·브랜치로 push한다 (fast-forward만, force 금지). push 직전에 다음을 모두 확인하고 하나라도 어긋나면 push하지 않는다: HEAD·소스 불변(guard), security 결과의 SHA 일치, 패키지 체크섬 일치, `security_policy` 통과(exit 0), 원격 브랜치가 security 검사 시점과 동일. push 후 원격 HEAD가 해당 SHA인지 확인한다.
+- `--stop-after security` 로 push 직전까지만 실행할 수 있다. 기본은 push까지 실행한다.
 - CI 실패 시 CD와 push를 실행하지 않는다. CD 실패 시 push를 실행하지 않는다. 모든 단계 실패는 pipeline의 0이 아닌 종료 코드로 전파한다.
 - CI 이후 소스 또는 HEAD가 달라지면 해당 실행의 CD/push를 중단한다. 생성 로그와 산출물은 소스 변경 판정에서 구분한다.
 - 실행 전에 commit 범위, CI 명령, 배포 대상·방법·확인 절차, push 원격·브랜치를 확인한다. 필수 설정이 없으면 실행 오류로 처리하며 단계를 성공 또는 배포 완료로 간주하지 않는다.
@@ -54,7 +56,7 @@
 ## 공유 폴더 배포
 
 - CD는 공유 `CavemanDrive/3rd_party` 아래에 패키지를 게시한다. 현재 공유 루트는 `%USERPROFILE%/Downloads/CavemanDrive/3rd_party`이며 환경별 경로는 실행 설정으로 지정한다.
-- 배포 위치는 `3rd_party/skim-search/releases/{전체_SHA}/`다. 패키지 ZIP, `manifest.json`, `SHA256SUMS`를 저장한다.
+- 배포 위치는 `3rd_party/skim-search/{전체_SHA}/`다 (`versions.json`과 같은 폴더). 패키지 ZIP, `manifest.json`, `SHA256SUMS`를 저장한다.
 - ZIP은 CI에서 검증한 Windows x64 Release `skim-search.exe`, 필요한 `rg.exe`·`sk.exe`, 사용 안내를 포함한다. 사용자 설정 파일은 포함하지 않는다. CD에서 다시 빌드하지 않는다.
 - manifest에는 전체 SHA, 배정 버전, 분류 근거, 빌드 시각·환경·도구 버전과 산출물 정보를 기록한다. 게시한 ZIP의 체크섬을 확인한 후 CD 성공으로 처리한다.
 - 임시 위치에서 패키지와 검증 정보를 완성한 뒤 게시한다. 기존 배포본을 덮어쓰지 않으며 같은 SHA 재실행 시 기존 패키지·manifest·체크섬 일치를 확인한다. 불일치하면 실패로 처리한다.
@@ -64,3 +66,9 @@
 - `ref/actual/logs/one-shot/`에 실행별 UTF-8 로그를 저장한다.
 - 실행 ID, 커밋 SHA, 단계 순서, 시작·종료 시각, 실행 명령, 종료 코드, stdout/stderr, 배포 산출물·대상·결과, push 원격·브랜치·결과를 기록한다. 인증 정보는 로그에 남기지 않는다.
 - 성공·실패·시간 초과 시 실행한 자식 프로세스와 임시 자원을 정리한다.
+
+## 키보드 사용 알림
+
+- 키보드·마우스 입력을 주입하는 단계(CI의 UI e2e, `KEYBOARD_MODULES`) 직전에 모달이 아닌 알림을 한 번 띄운다. 한 실행(run)에서 한 번만 띄우고, 이후 키보드 사용 단계에서는 다시 띄우지 않는다.
+- 알림은 포커스를 가져가지 않는 Windows 토스트를 사용하고, 실패하면 트레이 풍선 알림으로 대체한다. 알림 후 `keyboard_alert_lead_seconds`(기본 5초) 기다린 뒤 진행한다.
+- 알림 시각·방식·대기 시간을 실행 상태(`state.json`의 `keyboard_alert`)와 이벤트 로그에 남긴다.

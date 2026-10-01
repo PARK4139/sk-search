@@ -1,4 +1,4 @@
-"""Headless verification; no git push, desktop input or production publication.
+"""Headless verification; pushes only to temporary local bare remotes (never the real origin), no desktop input, no production publication.
 
 Issues: diagnostics/one-shot-pipeline/bb7afe0d and
 diagnostics/one-shot-security-gate/aea6b525.
@@ -109,7 +109,8 @@ class PipelineTests(unittest.TestCase):
         for stage in ("commit", "ci", "cd"):
             p.execute_stage(self.run, stage, "patch" if stage == "commit" else None)
 
-    def test_full_wrappers_stop_before_push_and_preserve_remote(self):
+    def test_full_wrappers_push_verified_sha_to_temporary_remote(self):
+        # the remote is a temporary bare repository; the real origin is never used
         self.change()
         proc = subprocess.run([os.environ["COMSPEC"], "/d", "/c", "call", str(self.root / "one-shot.cmd"),
                                "--config", str(self.config), "--run-dir", str(self.logs)],
@@ -118,12 +119,23 @@ class PipelineTests(unittest.TestCase):
         state = p.read_json(self.logs / "state.json")
         self.assertEqual(state["stages"], {s: "passed" for s in p.STAGES})
         self.assertEqual(state["assignment"]["version"], "0.1.1")
-        self.assertEqual(state["push"], "disabled")
-        self.assertEqual(self.git("ls-remote", "origin", "refs/heads/master").split()[0], self.base)
+        self.assertEqual(state["push"]["result"], "pushed")
+        self.assertEqual(self.git("ls-remote", "origin", "refs/heads/master").split()[0], state["sha"])
         self.assertTrue(Path(state["release"]).exists())
+        self.assertEqual(Path(state["release"]).parent, self.shared / "skim-search")  # 3rd_party/skim-search/{SHA}
         report = p.read_json(self.logs / "security-report.json")
         self.assertEqual(report["result"], "passed")
         self.assertEqual(report["sha"], state["sha"])
+
+    def test_stop_after_security_preserves_remote(self):
+        self.change()
+        proc = subprocess.run([os.environ["COMSPEC"], "/d", "/c", "call", str(self.root / "one-shot.cmd"),
+                               "--config", str(self.config), "--run-dir", str(self.logs), "--stop-after", "security"],
+                              cwd=self.folder, env=self.env, capture_output=True, timeout=120)
+        self.assertEqual(proc.returncode, 0, proc.stdout.decode(errors="replace") + proc.stderr.decode(errors="replace"))
+        state = p.read_json(self.logs / "state.json")
+        self.assertNotIn("push", state["stages"])
+        self.assertEqual(self.git("ls-remote", "origin", "refs/heads/master").split()[0], self.base)
 
     def test_bump_levels_and_same_sha_reuse_conflict(self):
         self.assertEqual(p.bump_version("1.2.3", "major"), "2.0.0")
@@ -145,7 +157,7 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaises(p.Failure):
             p.execute_stage(self.run, "cd")
         self.assertEqual(self.run.state["stages"]["ci"], "failed")
-        self.assertFalse((self.shared / "skim-search/releases").exists())
+        self.assertFalse((self.shared / "skim-search" / self.run.state["sha"]).exists())
 
     def test_guard_and_package_tamper(self):
         self.prepare()
@@ -268,12 +280,56 @@ class PipelineTests(unittest.TestCase):
         entries = p.read_json(self.shared / "skim-search/versions.json")["entries"]
         self.assertEqual({e["version"] for e in entries}, {"0.1.1", "0.1.2"})
 
-    def test_push_entry_is_always_disabled(self):
+    def test_push_entry_requires_verified_run(self):
         proc = subprocess.run([sys.executable, str(self.root / "cores/scripts/one_shot/push.py"),
                                "--config", str(self.config)], cwd=self.folder, capture_output=True)
         self.assertNotEqual(proc.returncode, 0)
-        self.assertIn(b"push is disabled", proc.stderr)
+        self.assertIn(b"independent stage requires --run-dir", proc.stderr)
         self.assertEqual(self.git("ls-remote", "origin", "refs/heads/master").split()[0], self.base)
+
+    def secured(self):
+        self.prepare()
+        with patch.dict(os.environ, {"PATH": str(UV.parent) + os.pathsep + os.environ["PATH"]}):
+            p.execute_stage(self.run, "security")
+
+    def test_push_blocked_by_security_policy(self):
+        # a local user path in a commit to be pushed (rules/security.md SEC-LOCALPATH)
+        bs = "\\"
+        (self.root / "change.txt").write_text(f"log at C:{bs}Users{bs}" + "ali" + "ce" + f"{bs}x\n", encoding="utf-8")
+        for stage in ("commit", "ci", "cd", "security"):
+            p.execute_stage(self.run, stage, "patch" if stage == "commit" else None)
+        with self.assertRaisesRegex(p.Failure, "security_policy blocked"):
+            p.execute_stage(self.run, "push")
+        self.assertEqual(self.run.state["stages"]["push"], "failed")
+        self.assertEqual(self.git("ls-remote", "origin", "refs/heads/master").split()[0], self.base)
+
+    def test_push_blocked_when_remote_changed_after_security(self):
+        self.secured()
+        other = self.folder / "other"
+        self.shell(["git", "clone", "-q", str(self.remote), str(other)])
+        subprocess.check_call(["git", "-C", str(other), "-c", "user.email=x@example.invalid", "-c", "user.name=x",
+                               "commit", "-q", "--allow-empty", "-m", "concurrent"])
+        subprocess.check_call(["git", "-C", str(other), "push", "-q", "origin", "master"])
+        moved = self.git("ls-remote", "origin", "refs/heads/master").split()[0]
+        with self.assertRaisesRegex(p.Failure, "remote branch changed"):
+            p.execute_stage(self.run, "push")
+        self.assertEqual(self.git("ls-remote", "origin", "refs/heads/master").split()[0], moved)
+
+    def test_push_blocked_when_security_result_is_for_another_sha(self):
+        self.secured()
+        self.run.state["security"]["sha"] = "0" * 40
+        with self.assertRaisesRegex(p.Failure, "security result missing or for another SHA"):
+            p.execute_stage(self.run, "push")
+        self.assertEqual(self.git("ls-remote", "origin", "refs/heads/master").split()[0], self.base)
+
+    def test_keyboard_alert_once_per_run(self):
+        calls = []
+        self.run.cfg["keyboard_alert_lead_seconds"] = 0
+        with patch.object(self.run, "command", side_effect=lambda *a, **k: calls.append(a) or (0, "toast")):
+            p.keyboard_alert(self.run)
+            p.keyboard_alert(self.run)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.run.state["keyboard_alert"]["method"], "toast")
 
 
 if __name__ == "__main__":

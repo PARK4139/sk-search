@@ -1,4 +1,4 @@
-"""Local commit -> classify/version -> CI -> CD -> security -> STOP (no push).
+"""Local commit -> classify/version -> CI -> CD -> security -> push.
 
 Issue: diagnostics/one-shot-pipeline/bb7afe0d.
 Standard-library orchestration; Windows UI tests are only invoked by normal CI.
@@ -23,7 +23,9 @@ import zipfile
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
-STAGES = ("commit", "ci", "cd", "security")
+STAGES = ("commit", "ci", "cd", "security", "push")
+# CI modules that inject keyboard input (rules/one-shot.md#키보드-사용-알림)
+KEYBOARD_MODULES = ("e2e_ui",)
 LEVELS = ("patch", "minor", "major")
 
 
@@ -331,6 +333,46 @@ def commit(run, bump=None):
     run.guard()
 
 
+ALERT_SCRIPT = r"""
+$ErrorActionPreference = 'Stop'
+$t = $env:SK_ALERT_TITLE; $b = $env:SK_ALERT_BODY; $lead = [int]$env:SK_ALERT_LEAD
+try {
+  [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
+  [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null
+  $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+  $sec = [Security.SecurityElement]
+  $xml.LoadXml("<toast scenario='reminder'><visual><binding template='ToastGeneric'><text>$($sec::Escape($t))</text><text>$($sec::Escape($b))</text></binding></visual></toast>")
+  $app = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+  [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($app).Show((New-Object Windows.UI.Notifications.ToastNotification $xml))
+  'toast'
+} catch {
+  Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+  $n = New-Object System.Windows.Forms.NotifyIcon
+  $n.Icon = [System.Drawing.SystemIcons]::Warning; $n.Visible = $true
+  $n.ShowBalloonTip($lead * 1000, $t, $b, [System.Windows.Forms.ToolTipIcon]::Warning)
+  Start-Sleep -Seconds $lead; $n.Dispose()
+  'balloon'
+}
+"""
+
+
+def keyboard_alert(run):
+    """Non-modal notice (toast, no focus change) shown once per run before keyboard injection."""
+    if run.state.get("keyboard_alert"):
+        return
+    lead = int(run.cfg.get("keyboard_alert_lead_seconds", 5))
+    env = dict(os.environ, SK_ALERT_TITLE="skim-search one-shot: 키보드 사용 예정", SK_ALERT_LEAD=str(lead),
+               SK_ALERT_BODY=f"{lead}초 후 UI 테스트가 skim-search 창을 띄우고 키 입력(Ctrl+Shift+F 등)을 보냅니다. "
+                             "테스트가 끝날 때까지 키보드·마우스를 사용하지 마세요.")
+    code, method = run.command(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ALERT_SCRIPT], env=env, check=False)
+    method = method.splitlines()[-1] if code == 0 and method else "failed"
+    run.state["keyboard_alert"] = {"time": now(), "method": method, "lead_seconds": lead}
+    run.save()
+    run.event(event="keyboard_alert", method=method, lead_seconds=lead)
+    if method != "balloon":  # the balloon fallback already waited for the lead time
+        time.sleep(lead)
+
+
 def uv(run):
     return tool([run.cfg.get("uv", shutil.which("uv") or str(Path(run.cfg["third_party"]) / "pk_system/uv.exe"))])[0]
 
@@ -348,6 +390,8 @@ def ci(run):
         run.command(command, cwd=cores, env=env)
     if "ci_commands" not in run.cfg:
         for module in ("e2e_detection", "e2e_ui", "bench_rg", "bench_sk"):
+            if module in KEYBOARD_MODULES:
+                keyboard_alert(run)
             opts = ["--no-build"] if module.startswith("e2e") else []
             run.command([uv(run), "run", "--locked", "--project", cores / "tests/py", "python", "-m", "skim_tests." + module, *opts], env=env)
     exe = Path(run.cfg.get("artifact", cores / "target/release/skim-search.exe"))
@@ -400,7 +444,7 @@ def cd(run):
     for name, digest in run.state["artifacts"].items():
         if sha256(artifacts / name) != digest:
             raise Failure("CI artifact changed before CD")
-    releases = Path(run.cfg["third_party"]) / "skim-search/releases"
+    releases = Path(run.cfg["third_party"]) / "skim-search"  # 3rd_party/skim-search/{full SHA}/
     releases.mkdir(parents=True, exist_ok=True)
     target = releases / run.state["sha"]
     version = run.state["assignment"]["version"]
@@ -490,14 +534,37 @@ def security(run):
         run.save()
 
 
+def remote_head(run):
+    heads = run.git("ls-remote", run.cfg["remote"], "refs/heads/" + run.cfg["branch"]).split()
+    return heads[0] if heads else None
+
+
 def push(run):
-    """Never contains a git push invocation while the user's prohibition is active."""
-    raise Failure("push is disabled by user instruction; no remote write was attempted")
+    """Pushes the verified SHA only when every check is bound to it (rules/security.md)."""
+    run.guard()  # HEAD is still the committed SHA, no source changes
+    cfg, sha = run.cfg, run.state["sha"]
+    checked = run.state.get("security") or {}
+    if checked.get("sha") != sha:
+        raise Failure("security result missing or for another SHA")
+    manifest = verify_release(run.state["release"], run.state)
+    if manifest["package_sha256"] != checked.get("package_sha256"):
+        raise Failure("package changed after the security check")
+    # repository policy check: local paths, personal e-mail, forbidden paths, secret patterns
+    code, _ = run.command([sys.executable, HERE / "security_policy.py", "--repo", run.root, "--remote", cfg["remote"],
+                           "--branch", cfg["branch"], "--ref", sha], check=False)
+    if code != 0:
+        raise Failure(f"security_policy blocked the push (exit {code}); see ref/actual/logs/security/")
+    if remote_head(run) != checked.get("remote_base_sha"):
+        raise Failure("remote branch changed after the security check")
+    run.git("push", cfg["remote"], f"{sha}:refs/heads/{cfg['branch']}")  # fast-forward only, never forced
+    if remote_head(run) != sha:
+        raise Failure("remote branch does not point to the pushed SHA")
+    run.state["push"] = {"remote": cfg["remote"], "branch": cfg["branch"], "sha": sha, "time": now(), "result": "pushed"}
+    run.event(event="pushed", remote=cfg["remote"], branch=cfg["branch"], sha=sha)
+    run.save()
 
 
 def execute_stage(run, stage, bump=None):
-    if stage == "push":
-        push(run)
     previous = STAGES[:STAGES.index(stage)]
     if any(run.state["stages"].get(s) != "passed" for s in previous):
         raise Failure("previous stages not passed")
@@ -525,14 +592,11 @@ def main(stage=None):
     parser.add_argument("--config", type=Path, default=HERE / "config.json")
     parser.add_argument("--run-dir", type=Path, help="use an existing run for an independent stage")
     parser.add_argument("--bump", choices=LEVELS, help="explicit classification; skip agent")
-    parser.add_argument("--stop-after", choices=STAGES, default="security")
+    parser.add_argument("--stop-after", choices=STAGES, default="push")
     args = parser.parse_args()
     directory = (args.run_dir or ROOT / "ref/actual/logs/one-shot" / (datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8])).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     try:
-        # Push rejects immediately, before config, Git, or agent calls.
-        if stage == "push":
-            raise Failure("push is disabled by user instruction")
         cfg = load_config(args.config.resolve())
         run = Run(cfg, directory)
         if stage and stage != "commit" and (not args.run_dir or args.bump):
@@ -553,10 +617,9 @@ def main(stage=None):
                             command += ["--bump", args.bump]
                         run.command(command, env=env)
                         run.state = read_json(run.state_path)
-                    run.state["push"] = "disabled"
-                    run.save()
-        run.event(event="complete", stage=stage or args.stop_after, push="disabled")
-        print(f"PASS through {stage or args.stop_after}; push disabled; logs: {directory}")
+        pushed = (run.state.get("push") or {}).get("result", "not run")
+        run.event(event="complete", stage=stage or args.stop_after, push=pushed)
+        print(f"PASS through {stage or args.stop_after}; push: {pushed}; logs: {directory}")
         return 0
     except (Exception, KeyboardInterrupt) as exc:
         write_json(directory / "failure.json", {"time": now(), "error": str(exc), "type": type(exc).__name__})
