@@ -24,6 +24,7 @@
 
 - 경고(차단 아님): 5MB 초과 파일, 사용자 작업공간·호스트명 등 개인 식별 가능 문자열.
 - 화면 캡처는 skim-search 창만 담는다 (`environment.md#스크립트-작성-주의`). 다른 창이 섞일 수 있는 캡처는 commit하지 않는다.
+- 이미지 속 글자는 자동 검사(security_policy, gitleaks) 범위 밖이다. 캡처를 commit하기 전에 화면에 보이는 경로(검색 경로 입력란, 결과·토스트)에 계정명이 없는지 눈으로 확인한다. e2e workspace는 `%PUBLIC%\skim-search-e2e`(골든 샘플 트리 복사본)를 쓰고 `%TEMP%`·`%USERPROFILE%` 아래를 화면에 띄우지 않는다 (`diagnostics/screenshot-local-user-path`).
 
 ## 실행
 

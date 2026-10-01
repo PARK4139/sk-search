@@ -29,7 +29,7 @@ from .common import (
     WM_SETTEXT, App, AppLog, Checker, Log, capture, cargo_build, class_name, foreground, key_combo, pct,
     post, top_windows_of, user32, visible,
 )
-from .paths import SAMPLE_TREE
+from .paths import E2E_WS, SAMPLE_TREE
 
 class Ui:
     """UI Automation access to one skim-search window (elements found by accessible-label)."""
@@ -75,7 +75,7 @@ def main() -> int:
     applog = AppLog()
 
     # fixture workspace (common test workspace mirror) + a long file for scrolling
-    ws = TEMP / "skim-search-e2e-ws"
+    ws = E2E_WS  # copy of the golden sample tree; removed at the end
     shutil.rmtree(ws, ignore_errors=True)
     shutil.copytree(SAMPLE_TREE, ws)
     (ws / "open-test.txt").write_text("systemopen marker\n", encoding="utf-8")
@@ -184,8 +184,11 @@ def main() -> int:
         applog.mark()
         if keys_if_foreground(app, VK_CONTROL, 0x53):
             saved = applog.wait(r"\[preview_editor\] saved path=")
-            disk = (ws / "README.md").read_text(encoding="utf-8")
-            check("preview_editor/ctrl-s-save", bool(saved) and "TODO: edited in e2e" in disk, "keyboard Ctrl+S wrote README.md")
+            # the previewed file is the first md result, whose order varies between rg runs
+            m = re.search(r"saved path=(.+?) bytes=", saved or "")
+            target = Path(m.group(1)) if m else ws / "README.md"
+            disk = target.read_text(encoding="utf-8") if target.exists() else ""
+            check("preview_editor/ctrl-s-save", bool(saved) and "TODO: edited in e2e" in disk, f"keyboard Ctrl+S wrote {target.name}")
             time.sleep(0.2)
             shot(app, "e2e_toast_success")
         else:
@@ -358,6 +361,8 @@ def main() -> int:
         if app is not None:  # only the skim-search process this script launched
             app.kill()
             log(f"killed own skim-search pid={app.proc.pid}")
+        shutil.rmtree(ws, ignore_errors=True)  # the workspace this script created
+        log(f"removed workspace {ws} exists={ws.exists()}")
     return check.finish("e2e_ui")
 
 

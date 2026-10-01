@@ -19,3 +19,6 @@ EXE_DEBUG = TARGET / "debug" / "skim-search.exe"
 EXE_RELEASE = TARGET / "release" / "skim-search.exe"
 WINDOW_TITLE = "skim-search"
 TEMP = Path(os.environ.get("TEMP", REPO))
+# Shown in the search-root box of committed screenshots: must not contain the Windows account name
+# (rules/security.md SEC-LOCALPATH), so not under %TEMP%/%USERPROFILE%.
+E2E_WS = Path(os.environ.get("PUBLIC", r"C:\Users\Public")) / "skim-search-e2e"
