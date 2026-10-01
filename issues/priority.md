@@ -5,3 +5,4 @@
 | Normal | 1c78710f | rules/environment.md#검증-스크립트 / 발생: diagnostics/python-test-script-migration (사용자 PC 사용 중 실행 보류) |
 | Normal | 9714c20c | 사용자 요청 (2026-10-01): one-shot 키보드 사용 비모달 알림 1회 |
 | Normal | efcb006b | 사용자 요청 (2026-10-01): CD 배포 위치 3rd_party/skim-search/{SHA} |
+| Normal | 38926773 | 사용자 요청 (2026-10-01): failure.json 없이 이슈만 실패 SSOT; 실패 시 backlog에만 작성, 해결 후 동일 파일 closed 이동 |
