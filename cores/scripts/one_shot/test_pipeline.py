@@ -159,6 +159,35 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.run.state["stages"]["ci"], "failed")
         self.assertFalse((self.shared / "skim-search" / self.run.state["sha"]).exists())
 
+    def test_no_changes_uses_head(self):
+        p.execute_stage(self.run, "commit", "patch")
+        self.assertEqual(self.run.state["sha"], self.base)
+        events = (self.logs / "events.jsonl").read_text(encoding="utf-8")
+        self.assertIn('"commit_unchanged"', events)
+
+    def test_missing_required_setting_fails_before_run(self):
+        cfg = p.read_json(self.config)
+        for name in ("remote", "commit_paths"):
+            broken = dict(cfg)
+            broken.pop(name)
+            p.write_json(self.config, broken)
+            with self.assertRaises(p.Failure):
+                p.load_config(self.config, self.root)
+
+    def test_cd_failure_blocks_push(self):
+        from unittest import mock
+        self.change()
+        for stage in ("commit", "ci"):
+            p.execute_stage(self.run, stage, "patch" if stage == "commit" else None)
+        with mock.patch.object(p, "cd", side_effect=p.Failure("fixture cd failure")):
+            with self.assertRaises(p.Failure):
+                p.execute_stage(self.run, "cd")
+        for stage in ("security", "push"):
+            with self.assertRaises(p.Failure):
+                p.execute_stage(self.run, stage)
+        self.assertEqual(self.run.state["stages"]["cd"], "failed")
+        self.assertEqual(self.git("ls-remote", "origin", "refs/heads/master").split()[0], self.base)
+
     def test_guard_and_package_tamper(self):
         self.prepare()
         manifest = p.verify_release(self.run.state["release"], self.run.state)

@@ -17,7 +17,16 @@ one-shot으로 commit → CI → CD → push 파이프라인 구현
 7. CI에서 검증한 산출물을 공유 `3rd_party/skim-search/releases/{전체_SHA}/`에 `skim-search-{version}-{sha8}-windows-x64.zip`, manifest, 체크섬으로 게시한다.
 
 # actual result
-미구현. one-shot 파이프라인과 각 단계의 공통 호출 구조가 없다.
+PASS (2026-10-02).
+- 구현: 루트 `one-shot.cmd` → `.ps1` → `one_shot.py`, `cores/scripts/one_shot/{commit,ci,cd,security,push}.cmd/.ps1/.py` (launch.ps1 경유), `pipeline.py`. 배포 위치는 efcb006b 결정으로 `3rd_party/skim-search/{전체_SHA}/` (steps 7의 `releases/` 아님). 실제 push 차단은 사용자 지시(2026-10-01 "push via one-shot")로 해제, security 단계 추가(aea6b525).
+- 실제 실행 PASS: run `ref/actual/logs/one-shot/20261002-013512-7acafd6a` — commit→ci→cd→security→push 모두 passed, SHA 76e944e, 버전 0.2.4(`--bump patch`), exe `--version` = `skim-search 0.2.4 76e944e…`, 패키지·manifest·SHA256SUMS 게시 및 체크섬 확인, origin/main == 76e944e.
+- 자동 검증 `test_pipeline` 21/21 PASS (`ref/actual/logs/one-shot-pipeline-tests.log`, 공백 포함 경로 `repo with spaces`·다른 cwd에서 래퍼 실행):
+  - 성공 경로·동일 SHA 산출물: full wrappers push, stop-after security.
+  - 버전: bump 단계별 초기화, 같은 SHA 재사용·충돌, 동시 배정 유일성, 에이전트 분류·재사용·잘못된 응답·시간 초과 시 CI 이전 중단, --bump 시 에이전트 미호출.
+  - 실패 전파: CI 실패 시 CD 미실행, CD 실패 시 security·push 미실행·원격 불변(신규), 시간 초과 시 자식 프로세스 종료, 변경 없을 때 HEAD 사용·`commit_unchanged` 기록(신규), 필수 설정 누락 시 사전 실패(신규), HEAD·패키지 변조 guard, 재게시 시 기존 패키지 보존.
+  - push 게이트: 보안 정책 차단, 원격 변경 시 차단, 다른 SHA 결과 차단, `--run-dir` 없는 단독 push 거부.
+- 실제 실행 중 발견·수정 (closed): one-shot-concurrent-build-overwrites-exe, scope-test-depends-on-fixture-content, e2e-common-missing-os-import, ui-flow-root-rerun-intermittent, e2e-ui-stats-after-fixture-change.
+- 문서: `rules/one-shot.md#사용법`에 준비·설정·전체/부분/단계 독립 실행·자체 테스트 명령 추가.
 
 # expected result
 - `rules/one-shot.md`의 호출 구조, 단계 순서, 언어별 책임을 충족하며 각 단계도 독립 실행 가능하다.

@@ -4,7 +4,16 @@
 
 - 사용자 진입점은 저장소 루트의 `one-shot.cmd`이다. `one-shot.cmd` → `one-shot.ps1` → `one_shot.py` 순으로 호출한다.
 - `one_shot.py`는 `commit` → `ci`(빌드·테스트·검사) → `cd`(배포) → `push` 순서로 실행하는 pipeline이다.
-- 각 단계는 독립 실행 가능한 `{stage}.cmd` → `{stage}.ps1` → `{stage}.py` 호출 구조를 제공한다. stage는 `commit`, `ci`, `cd`, `push`이다.
+- 각 단계는 독립 실행 가능한 `{stage}.cmd` → `{stage}.ps1` → `{stage}.py` 호출 구조를 제공한다. stage는 `commit`, `ci`, `cd`, `security`, `push`이다.
+
+## 사용법
+
+- 준비: Rust(cargo), uv(PATH 또는 `3rd_party/pk_system/uv.exe`), `3rd_party/ripgrep/rg.exe`, `3rd_party/skim/sk.exe`, `3rd_party/security/gitleaks.exe`, `cargo install cargo-audit`. 자동 분류를 쓰면 Codex CLI 설치·로그인.
+- 설정: `cores/scripts/one_shot/config.json` (remote, branch, commit_paths, commit_message, initial_version, initial_base_sha, 도구 경로, 시간 제한). 필수 설정이 없으면 실행 전에 실패한다.
+- 전체 실행: `one-shot.cmd` (에이전트 분류) 또는 `one-shot.cmd --bump patch|minor|major`. 결과: `PASS through push; push: pushed; logs: ref\actual\logs\one-shot\{run}`.
+- push 직전까지: `one-shot.cmd --bump patch --stop-after security`.
+- 단계 독립 실행: `cores\scripts\one_shot\{stage}.cmd --run-dir ref\actual\logs\one-shot\{run}` (앞 단계가 통과한 실행에만 적용).
+- 자체 테스트: `cores\scripts\one_shot` 에서 `uv run --locked --project ..\..\tests\py python -m unittest test_pipeline` (임시 bare 원격만 사용).
 - pipeline은 각 단계의 `.cmd` 진입점을 호출해 독립 실행과 같은 경로를 사용한다.
 - 루트의 one-shot 파일 3개는 진입점 예외로 허용한다. 단계 구현은 `cores/scripts/one_shot/`에 둔다. `one-shot.cmd`와 `one-shot.ps1`의 이름은 사용자 지정 예외이며 Python 파일은 snake_case로 한다.
 
