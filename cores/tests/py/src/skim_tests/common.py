@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.wintypes as wt
+import os
 import re
 import subprocess
 import sys
