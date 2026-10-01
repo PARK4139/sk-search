@@ -22,7 +22,9 @@ issues/
 
 - 모든 폴더 이름은 영어 ASCII. function family는 `families.md`의 snake_case 이름, sub family는 kebab-case로 쓴다.
 - 새 issue 파일명은 UUID 문자열의 앞 8자리 소문자 16진수로 한다. 실제 이름 예: `a1b2c3d4.md`. `{uuid:8}`은 규칙 표기이며 중괄호와 콜론은 파일명에 넣지 않는다.
-- `backlog` / `working` / `closed` 전체에서 ID 중복을 확인한다. 충돌하면 새 UUID를 생성한다.
+- ID 생성·배정 SSOT는 Git 공통 디렉터리의 `issue_ids.sqlite3` 한 개다. 생성 진입점은 `cores/scripts/issue_ids.py`의 `get_issue_id()` 하나로 통일한다. CLI: `uv run --project cores/tests/py python cores/scripts/issue_ids.py`.
+- 최초 초기화 트랜잭션에서만 `backlog` / `working` / `closed`의 기존 ID와 이전 예약 파일을 DB로 이관한다. 이후 전체 폴더 검색 없이 DB의 고유 키·트랜잭션으로 충돌 시 재생성하고 커밋 후 반환한다. 이전 예약 파일은 이관 커밋 후 제거한다. SQLite 임시 journal과 런타임 로그는 복구·검증용이며 ID 배정 SSOT가 아니다.
+- 모든 이슈 작성자가 이 API를 사용하며 DB를 삭제·재생성하거나 수동으로 ID를 배정하지 않는다. 초기화 이후 외부 이슈를 들여올 때는 배정 중단 상태에서 ID 등록·중복 검증을 먼저 수행한다. 별도 clone은 DB가 공유되지 않으므로 병합 전 등록·중복 검증이 필요하다.
 - 상태를 이동해도 UUID는 유지한다.
 - Windows 금지 문자 `\\ / : * ? " < > |`를 경로에 쓰지 않는다.
 
@@ -64,7 +66,7 @@ issues/
 1. `sources.md` 기준으로 handover FR/AC 및 showreel에서 검증 단위를 찾는다.
 2. `families.md`에서 family를 정하고 sub family 이름을 정한다.
 3. 이 문서의 우선순위 기준으로 등급을 정한다.
-4. 새 UUID를 만들고 전체 상태 폴더에서 중복을 확인한다.
+4. `#이름과-UUID`의 `get_issue_id()`로 새 ID를 예약한다.
 5. 제안 목록(경로 + title + 등급 + 근거)을 먼저 보고하고 승인 후 파일을 만든다.
 6. `issues/priority.md`에 우선순위·UUID·근거 행을 추가한다.
 
@@ -131,7 +133,7 @@ hostname: TBD
 
 ### 공통 테스트 workspace
 
-`D:\Projects\my-project`에는 `src/auth/login.ts`, `src/api/auth.ts`, `src/auth/logout.ts`, `test/login.test.ts`, `docs/login-guide.md`, `docs/install.md`, `README.md`, `config.json`, `docs/sample file.md`가 있다.
+공통 검색 fixture는 `cores/tests/fixtures/sample/tree/`에 커밋한다. Rust·Python 테스트는 이를 임시 경로에 복사해 쓰고 fixture 원본은 변경하지 않는다. scope 전용 추가 파일은 해당 테스트 코드에서 만든다.
 
 ## 작업 중 생긴 일
 

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.wintypes as wt
-import os
 import re
 import subprocess
 import sys
@@ -20,27 +19,15 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from .paths import (
+    APP_LOG, CORES, EXE_DEBUG, EXE_RELEASE, LOGS, REPO, RG, SHOTS, SK,
+    TEMP, THIRD_PARTY, WINDOW_TITLE,
+)
+
 # console output in UTF-8 regardless of the code page (log files are always UTF-8)
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
-
-# ── paths ──────────────────────────────────────────────────────────────
-
-REPO = Path(__file__).resolve().parents[5]  # .../sk_search
-THIRD_PARTY = next(p / "3rd_party" for p in REPO.parents if (p / "3rd_party").is_dir())
-RG = THIRD_PARTY / "ripgrep" / "rg.exe"
-SK = THIRD_PARTY / "skim" / "sk.exe"
-CORES = REPO / "cores"
-LOGS = REPO / "ref" / "actual" / "logs"
-SHOTS = REPO / "ref" / "actual" / "screenshot" / "frames"
-APP_LOG = LOGS / "skim-search.log"
-TARGET = Path(os.environ.get("CARGO_TARGET_DIR") or CORES / "target")  # one-shot builds into its own dir
-EXE_DEBUG = TARGET / "debug" / "skim-search.exe"
-EXE_RELEASE = TARGET / "release" / "skim-search.exe"
-WINDOW_TITLE = "skim-search"
-TEMP = Path(os.environ.get("TEMP", REPO))
-
 
 def cargo_build(release: bool) -> bool:
     args = ["cargo", "build"] + (["--release"] if release else [])

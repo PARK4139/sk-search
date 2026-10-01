@@ -122,22 +122,11 @@ fn rg_path() -> PathBuf {
         .expect("3rd_party/ripgrep/rg.exe")
 }
 
-/// Common test workspace layout (rules/issue.md#공통-테스트-workspace) + traps.
+/// Common committed fixture + scope-specific path traps.
 fn workspace() -> PathBuf {
     let root = std::env::temp_dir().join(format!("skim-search-scope-{}", std::process::id()));
-    for f in [
-        "src/auth/login.ts",
-        "src/api/auth.ts",
-        "src/auth/logout.ts",
-        "test/login.test.ts",
-        "docs/login-guide.md",
-        "docs/install.md",
-        "README.md",
-        "config.json",
-        "docs/sample file.md",
-        "src/readme.md",
-        "srcfile.ts",
-    ] {
+    tests::copy_sample_tree(&root);
+    for f in ["src/readme.md", "srcfile.ts"] {
         let p = root.join(f);
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(p, "login logout TODO\n").unwrap();

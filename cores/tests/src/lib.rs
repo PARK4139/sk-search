@@ -33,40 +33,27 @@ pub fn temp_dir(name: &str) -> PathBuf {
     d
 }
 
-/// Mirror of the common test workspace (rules/issue.md#공통-테스트-workspace)
-/// with content chosen to exercise each query syntax.
-pub const WORKSPACE_FILES: &[(&str, &str)] = &[
-    (
-        "src/auth/login.ts",
-        "import { db } from '../lib/db'\n\
-         export async function login(email: string) {\n\
-         \x20 const result = await loginWithToken(token)\n\
-         \x20 logger.info('login success')\n\
-         \x20 throw new Error('login failed')\n\
-         }\n",
-    ),
-    ("src/api/auth.ts", "import { login } from '../auth/login'\nexport const auth = { login }\n"),
-    ("src/auth/logout.ts", "export function logout() {}\n// logout handler\n"),
-    ("src/fuzzy.ts", "let lo = g; if (n) {}\n"),
-    ("test/login.test.ts", "describe('login', () => {})\nit('calls logout', () => logout())\n"),
-    (
-        "docs/login-guide.md",
-        "# Login Guide\nUse the login command to authenticate.\n## Logout\nRun logout when the session must end.\nTODO: document SSO login behavior.\n",
-    ),
-    ("docs/install.md", "# Installation\nTODO: add screenshots\n"),
-    ("README.md", "# my-project\nTODO: write readme\nlogin and logout supported\n"),
-    ("config.json", "{ \"login\": true }\n"),
-    ("docs/sample file.md", "TODO: sample with spaces\n"),
-];
-
 pub fn workspace(name: &str) -> PathBuf {
     let root = temp_dir(name);
-    for (rel, content) in WORKSPACE_FILES {
-        let p = root.join(rel);
-        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-        std::fs::write(p, content).unwrap();
-    }
+    copy_sample_tree(&root);
     root
+}
+
+pub fn copy_sample_tree(destination: &Path) {
+    copy_fixture(Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/sample/tree"), destination);
+}
+
+fn copy_fixture(source: PathBuf, destination: &Path) {
+    std::fs::create_dir_all(destination).unwrap();
+    for item in std::fs::read_dir(source).unwrap() {
+        let item = item.unwrap();
+        let target = destination.join(item.file_name());
+        if item.file_type().unwrap().is_dir() {
+            copy_fixture(item.path(), &target);
+        } else {
+            std::fs::copy(item.path(), target).unwrap();
+        }
+    }
 }
 
 /// Large workspace for streaming / cancellation tests.

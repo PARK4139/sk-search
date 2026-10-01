@@ -14,6 +14,7 @@ import sys
 import time
 
 from .common import RG, TEMP, Log
+from .paths import SAMPLE_TREE
 
 # same arguments as the app (cores/app/src/search_engine/ripgrep.rs)
 BASE = ["--null", "--line-number", "--column", "--no-heading", "--with-filename", "--color", "never",
@@ -34,10 +35,7 @@ def main() -> int:
     log = Log("bench-rg.log", f"bench_rg runs={a.runs}")
     ws = TEMP / "skim-search-bench-ws"
     shutil.rmtree(ws, ignore_errors=True)
-    for rel in ("src/auth/login.ts", "src/api/auth.ts", "docs/login-guide.md", "README.md", "config.json"):
-        f = ws / rel
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text("login line\nother line\n", encoding="utf-8")
+    shutil.copytree(SAMPLE_TREE, ws)
 
     fail = 0
     for label, extra in VARIANTS:

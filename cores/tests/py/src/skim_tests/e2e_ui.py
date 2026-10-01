@@ -29,22 +29,7 @@ from .common import (
     WM_SETTEXT, App, AppLog, Checker, Log, capture, cargo_build, class_name, foreground, key_combo, pct,
     post, top_windows_of, user32, visible,
 )
-
-FILES = {
-    "src/auth/login.ts": "import { db } from '../lib/db'\nexport async function login(email: string) {\n"
-    "  const result = await loginWithToken(token)\n  logger.info('login success')\n  throw new Error('login failed')\n}\n",
-    "src/api/auth.ts": "import { login } from '../auth/login'\nexport const auth = { login }\n",
-    "src/auth/logout.ts": "export function logout() {}\n// logout handler\n",
-    "test/login.test.ts": "describe('login', () => {})\nit('calls logout', () => logout())\n",
-    "docs/login-guide.md": "# Login Guide\nUse the login command to authenticate.\n## Logout\n"
-    "Run logout when the session must end.\nTODO: document SSO login behavior.\n",
-    "docs/install.md": "# Installation\nTODO: add screenshots\n",
-    "README.md": "# my-project\nTODO: write readme\nlogin and logout supported\n",
-    "config.json": '{ "login": true }\n',
-    "docs/sample file.md": "TODO: sample with spaces\n",
-    "open-test.txt": "systemopen marker\n",
-}
-
+from .paths import SAMPLE_TREE
 
 class Ui:
     """UI Automation access to one skim-search window (elements found by accessible-label)."""
@@ -92,10 +77,8 @@ def main() -> int:
     # fixture workspace (common test workspace mirror) + a long file for scrolling
     ws = TEMP / "skim-search-e2e-ws"
     shutil.rmtree(ws, ignore_errors=True)
-    for rel, content in FILES.items():
-        f = ws / rel
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(content, encoding="utf-8")
+    shutil.copytree(SAMPLE_TREE, ws)
+    (ws / "open-test.txt").write_text("systemopen marker\n", encoding="utf-8")
     filler = "\n".join(f"// filler {i}" for i in range(1, 81))
     (ws / "src" / "long.ts").write_text(f"{filler}\nexport const loginTarget = 1\n{filler}\n", encoding="utf-8")
 

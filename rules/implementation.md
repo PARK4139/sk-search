@@ -47,6 +47,7 @@ cores/
    ├─ Cargo.toml               ← dev-dependency: common, app
    ├─ tests/{function family}_*.rs
    └─ py/                      ← uv 프로젝트: e2e·캡처·bench (skim_tests, environment.md#검증-스크립트)
+      └─ src/skim_tests/paths.py ← 저장소·도구·fixture·로그·임시 경로 SSOT
 ```
 
 ## 구조 규칙
@@ -54,6 +55,7 @@ cores/
 - 위 tree는 목표 형태다. 파일/module은 해당 issue 착수 시 필요한 것만 만든다. 빈 module 선생성 금지.
 - `common/`에는 실제로 2개 이상 function family에서 쓰는 코드만 둔다. 미래 사용을 가정한 선제 공통화 금지.
 - 의존 방향: `tests` → `app` → `common`. 역방향 참조 금지. `app` 내부 module 간 순환 의존 금지.
+- Python 검증 도구의 경로 상수는 `cores/tests/py/src/skim_tests/paths.py` 한 곳에서 정의한다.
 - handover §25의 금지 계층(`manager/`, `repository/`, `service/`, `adapter/`, `domain/`)은 만들지 않는다.
 - 새 function family 추가 시 `families.md` 표를 먼저 갱신한다.
 - handover §25 권장 구조(단일 crate)와 다르다. 사용자 지시(`cores/` tree, `cores/common/`)가 우선한다.
