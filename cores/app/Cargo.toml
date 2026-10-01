@@ -1,0 +1,21 @@
+[package]
+name = "app"
+version.workspace = true
+edition.workspace = true
+build = "build.rs"
+
+[lib]
+name = "skim_search"
+path = "src/lib.rs"
+
+[[bin]]
+name = "skim-search"
+path = "src/main.rs"
+
+[dependencies]
+windows.workspace = true
+slint.workspace = true
+common.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true

@@ -1,0 +1,14 @@
+[package]
+name = "tests"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+app.workspace = true
+
+[dev-dependencies]
+app.workspace = true
+common.workspace = true
+slint.workspace = true
+i-slint-backend-testing.workspace = true

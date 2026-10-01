@@ -1,0 +1,469 @@
+// skim-search main window (handover §24).
+// Required components carry an `accessible-label` listed in src/lib.rs MAIN_UI_COMPONENTS.
+// No search button, no mode chips (handover §4, §6, §33).
+
+import { Button, LineEdit, ListView, ScrollView } from "std-widgets.slint";
+
+global Theme {
+    out property <color> bg: #1e1e1e;
+    out property <color> panel: #252526;
+    out property <color> border: #3c3c3c;
+    out property <color> text: #cccccc;
+    out property <color> muted: #8b8b8b;
+    out property <color> selected: #094771;
+    out property <color> current-line: #2a2d2e;
+    out property <color> info: #3794ff;
+    out property <color> success: #89d185;
+    out property <color> warning: #cca700;
+    out property <color> error: #f14c4c;
+    out property <string> mono: "Consolas";
+}
+
+// kind: "info" | "success" | "warning" | "error" (handover §23)
+export struct ToastData {
+    id: int,
+    kind: string,
+    title: string,
+    body: string,
+}
+
+// One row of the result panel: a file group header or a match line (handover §14).
+export struct ResultRow {
+    is-group: bool,
+    group: int,
+    index: int,
+    badge: string,
+    path: string,
+    count: int,
+    line: int,
+    text: string,
+    selected: bool,
+    expanded: bool,
+}
+
+export component MainWindow inherits Window {
+    title: "skim-search";
+    preferred-width: 1152px;
+    preferred-height: 768px;
+    min-width: 720px;
+    min-height: 480px;
+    background: Theme.bg;
+    // Segoe UI: Malgun Gothic renders "\\" as "₩", which breaks Windows paths. Hangul falls back automatically.
+    default-font-family: "Segoe UI";
+    default-font-size: 13px;
+
+    in-out property <string> search-root;
+    in-out property <string> query;
+    in property <string> stats: "0 결과 · 0 파일 · 0.00초";
+    in property <string> status: "rg - · sk - · 0 results · 0.00 sec";
+    in-out property <[ToastData]> toasts;
+
+    in property <[ResultRow]> rows;
+    in property <int> selected-row: -1;
+
+    in property <string> preview-path;
+    in property <string> preview-loc;
+    in-out property <string> preview-text;
+    in property <string> preview-gutter: "1";
+    in property <int> preview-line: 0;
+    in property <int> preview-scroll-seq: 0;
+    in property <bool> preview-editable: true;
+    in property <bool> preview-dirty: false;
+
+    // Fired on every query edit (no search button, handover §4).
+    callback query-edited(string);
+    callback root-edited(string);
+    callback browse();
+    // index = -1 for a group header click (toggle)
+    callback row-clicked(int, int);
+    callback nav(int);
+    callback open-file();
+    callback open-parent();
+    callback save-requested(string);
+    callback preview-edited(string);
+    callback hide-requested();
+
+    public function focus-query() {
+        query-input.focus();
+    }
+
+    public function select-preview(anchor: int, focus: int) {
+        editor.set-selection-offsets(anchor, focus);
+    }
+
+    pure function toast-color(kind: string) -> color {
+        kind == "error" ? Theme.error : kind == "warning" ? Theme.warning : kind == "success" ? Theme.success : Theme.info
+    }
+
+    property <length> row-h: 22px;
+    property <length> line-h: probe.preferred-height;
+    property <length> gutter-w: 56px;
+
+    probe := Text {
+        text: "0";
+        font-family: Theme.mono;
+        font-size: 13px;
+        visible: false;
+    }
+
+    keys := FocusScope {
+        focus-on-click: false;
+        capture-key-pressed(event) => {
+            if (event.modifiers.control && (event.text == "s" || event.text == "S" || event.text == "\u{13}")) {
+                root.save-requested(editor.text);
+                return accept;
+            }
+            if (event.text == Key.Escape) {
+                root.hide-requested();
+                return accept;
+            }
+            if (query-input.has-focus) {
+                if (event.text == Key.UpArrow) {
+                    root.nav(-1);
+                    return accept;
+                }
+                if (event.text == Key.DownArrow) {
+                    root.nav(1);
+                    return accept;
+                }
+                if (event.text == Key.Return && event.modifiers.control) {
+                    root.open-parent();
+                    return accept;
+                }
+                if (event.text == Key.Return) {
+                    root.open-file();
+                    return accept;
+                }
+            }
+            reject
+        }
+
+        VerticalLayout {
+            padding: 12px;
+            spacing: 8px;
+
+            // ── top: search root ──
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: "검색 경로";
+                    color: Theme.text;
+                    vertical-alignment: center;
+                }
+                root-input := LineEdit {
+                    accessible-label: "search-root-input";
+                    horizontal-stretch: 1;
+                    placeholder-text: "D:\\Projects\\my-project";
+                    text <=> root.search-root;
+                    edited(text) => {
+                        root.root-edited(text);
+                    }
+                }
+                Button {
+                    accessible-label: "browse-button";
+                    text: "찾아보기";
+                    clicked => {
+                        root.browse();
+                    }
+                }
+            }
+
+            // ── query ──
+            query-input := LineEdit {
+                accessible-label: "query-input";
+                placeholder-text: "검색어 (예: login !test path:src ext:ts)";
+                text <=> root.query;
+                edited(text) => {
+                    root.query-edited(text);
+                }
+            }
+
+            // ── syntax hint ──
+            Text {
+                accessible-role: text;
+                accessible-label: "syntax-hint";
+                text: "문법: 공백=AND   'exact   !exclude   |=OR   path:src   ext:ts/md";
+                color: Theme.muted;
+            }
+
+            // ── body ──
+            HorizontalLayout {
+                vertical-stretch: 1;
+                spacing: 8px;
+
+                // left: result panel
+                Rectangle {
+                    accessible-role: groupbox;
+                    accessible-label: "result-panel";
+                    horizontal-stretch: 1;
+                    background: Theme.panel;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 6px;
+                        Text {
+                            accessible-role: text;
+                            accessible-label: "result-stats";
+                            text: root.stats;
+                            color: Theme.text;
+                        }
+
+                        list := ListView {
+                            vertical-stretch: 1;
+                            for row[i] in root.rows: Rectangle {
+                                accessible-role: list-item;
+                                accessible-label: "result-row";
+                                accessible-description: row.is-group
+                                    ? "group " + row.badge + " " + row.path + " " + row.count + (row.expanded ? " expanded" : " collapsed")
+                                    : "line " + row.line + " " + row.text + (row.selected ? " selected" : "");
+                                height: root.row-h;
+                                background: row.selected ? Theme.selected : transparent;
+                                TouchArea {
+                                    clicked => {
+                                        root.row-clicked(row.group, row.is-group ? -1 : row.index);
+                                    }
+                                }
+                                if row.is-group: HorizontalLayout {
+                                    padding-left: 4px;
+                                    padding-right: 8px;
+                                    spacing: 6px;
+                                    Text {
+                                        width: 12px;
+                                        text: row.expanded ? "▼" : ">";
+                                        color: Theme.muted;
+                                        vertical-alignment: center;
+                                    }
+                                    Rectangle {
+                                        width: 34px;
+                                        height: 16px;
+                                        y: (parent.height - self.height) / 2;
+                                        border-radius: 3px;
+                                        background: row.badge == "MD" ? #4b3f72 : #1f4e79;
+                                        Text {
+                                            text: row.badge;
+                                            color: #ffffff;
+                                            font-size: 10px;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                    Text {
+                                        horizontal-stretch: 1;
+                                        text: row.path;
+                                        color: Theme.text;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: row.count;
+                                        color: Theme.muted;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                if !row.is-group: HorizontalLayout {
+                                    padding-left: 26px;
+                                    padding-right: 8px;
+                                    spacing: 10px;
+                                    Text {
+                                        width: 40px;
+                                        text: row.line;
+                                        color: Theme.muted;
+                                        horizontal-alignment: right;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        horizontal-stretch: 1;
+                                        text: row.text;
+                                        color: Theme.text;
+                                        font-family: Theme.mono;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // right: preview / editor
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: Theme.panel;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 6px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text {
+                                accessible-role: text;
+                                accessible-label: "preview-path";
+                                horizontal-stretch: 1;
+                                text: (root.preview-dirty ? "● " : "") + root.preview-path;
+                                color: Theme.text;
+                                overflow: elide;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                accessible-role: text;
+                                accessible-label: "preview-loc";
+                                text: root.preview-loc;
+                                color: Theme.muted;
+                                vertical-alignment: center;
+                            }
+                            Button {
+                                accessible-label: "open-file-button";
+                                text: "파일 열기";
+                                clicked => {
+                                    root.open-file();
+                                }
+                            }
+                            Button {
+                                accessible-label: "open-parent-button";
+                                text: "부모경로 열기";
+                                clicked => {
+                                    root.open-parent();
+                                }
+                            }
+                        }
+
+                        sv := ScrollView {
+                            vertical-stretch: 1;
+                            content-width: max(self.visible-width, root.gutter-w + 8px + editor.preferred-width + 16px);
+                            content-height: max(self.visible-height, editor.preferred-height + 8px);
+
+                            Rectangle {
+                                // current match line
+                                x: 0;
+                                y: 2px + (root.preview-line - 1) * root.line-h;
+                                width: sv.content-width;
+                                height: root.line-h;
+                                visible: root.preview-line > 0;
+                                background: Theme.current-line;
+                            }
+
+                            Text {
+                                x: 0;
+                                y: 2px;
+                                width: root.gutter-w;
+                                text: root.preview-gutter;
+                                font-family: Theme.mono;
+                                font-size: 13px;
+                                color: Theme.muted;
+                                horizontal-alignment: right;
+                            }
+
+                            editor := TextInput {
+                                accessible-role: text-input;
+                                accessible-label: "preview-editor";
+                                x: root.gutter-w + 8px;
+                                y: 2px;
+                                width: max(self.preferred-width, sv.visible-width - self.x);
+                                height: max(self.preferred-height, sv.visible-height - 4px);
+                                single-line: false;
+                                wrap: no-wrap;
+                                read-only: !root.preview-editable;
+                                font-family: Theme.mono;
+                                font-size: 13px;
+                                color: Theme.text;
+                                selection-background-color: #264f78;
+                                text <=> root.preview-text;
+                                edited => {
+                                    root.preview-edited(self.text);
+                                }
+                                cursor-position-changed(p) => {
+                                    if (p.y + self.y + sv.content-y < 0) {
+                                        sv.content-y = -(p.y + self.y);
+                                    } else if (p.y + self.y + root.line-h + sv.content-y > sv.visible-height) {
+                                        sv.content-y = sv.visible-height - (p.y + self.y + root.line-h);
+                                    }
+                                    if (p.x + self.x + sv.content-x < 0) {
+                                        sv.content-x = -(p.x + self.x);
+                                    } else if (p.x + self.x + 8px + sv.content-x > sv.visible-width) {
+                                        sv.content-x = sv.visible-width - (p.x + self.x + 8px);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── status bar ──
+            Text {
+                accessible-role: text;
+                accessible-label: "status-bar";
+                text: root.status;
+                color: Theme.muted;
+            }
+        }
+    }
+
+    // scroll the preview so the selected match line is visible (upper third)
+    changed preview-scroll-seq => {
+        sv.content-x = 0;
+        sv.content-y = -max(0px, min(sv.content-height - sv.visible-height, (root.preview-line - 1) * root.line-h - sv.visible-height / 3));
+    }
+
+    // keep the result list scrolled to the selection (↑/↓)
+    changed selected-row => {
+        if (root.selected-row >= 0) {
+            if (root.selected-row * root.row-h + list.content-y < 0) {
+                list.content-y = -root.selected-row * root.row-h;
+            } else if ((root.selected-row + 1) * root.row-h + list.content-y > list.visible-height) {
+                list.content-y = list.visible-height - (root.selected-row + 1) * root.row-h;
+            }
+        }
+    }
+
+    // ── toast area: bottom-right overlay. Newest at the bottom, vertical stack (handover §23).
+    Rectangle {
+        accessible-role: groupbox;
+        accessible-label: "toast-area";
+        x: parent.width - self.width - 16px;
+        y: 0px;
+        width: 300px;
+        height: parent.height - 40px;
+        VerticalLayout {
+            alignment: end;
+            spacing: 8px;
+            for t in root.toasts: Rectangle {
+                accessible-role: text;
+                accessible-label: "toast";
+                accessible-description: t.kind + ": " + t.title + " " + t.body;
+                background: #2d2d30;
+                border-radius: 4px;
+                border-width: 1px;
+                border-color: root.toast-color(t.kind);
+                HorizontalLayout {
+                    padding: 10px;
+                    spacing: 8px;
+                    Rectangle {
+                        width: 4px;
+                        border-radius: 2px;
+                        background: root.toast-color(t.kind);
+                    }
+                    VerticalLayout {
+                        spacing: 4px;
+                        Text {
+                            text: t.title;
+                            color: Theme.text;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: t.body;
+                            color: Theme.muted;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    init => {
+        query-input.focus();
+    }
+}
