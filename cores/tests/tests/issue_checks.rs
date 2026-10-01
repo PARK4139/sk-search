@@ -160,3 +160,38 @@ fn result_model_groups_toggle_and_step() {
     assert_eq!(badge("Makefile"), "TXT");
     log::write("test", "result_model groups/toggle/step ok");
 }
+
+/// query_syntax/file-token: `file:` include via rg glob, `!file:` via file-name filter.
+#[test]
+fn file_token() {
+    let p = parse("login file:auth !file:test ext:ts path:src");
+    assert_eq!(p.skim, "login");
+    assert_eq!(p.scope.include_files, vec!["auth"]);
+    assert_eq!(p.scope.exclude_files, vec!["test"]);
+    assert_eq!(p.scope.rg_globs(), vec!["**/src/**/*auth*.ts".to_string()]);
+    assert_eq!(parse("x file:auth").scope.rg_globs(), vec!["*auth*".to_string()]);
+    assert!(p.scope.excludes_file(r"D:\p\src\login.test.ts"));
+    assert!(!p.scope.excludes_file(r"D:\p\test\auth.ts"), "only the file name counts, not directories");
+
+    let root = tests::workspace("file-token");
+    std::fs::create_dir_all(root.join("src").join("test")).unwrap();
+    std::fs::write(root.join("src").join("test").join("auth_helper.ts"), "login helper\n").unwrap();
+    std::fs::write(root.join("src").join("auth.test.ts"), "login spec\n").unwrap();
+    let out = tests::search(&root, "login file:auth !file:test");
+    let f = tests::files(&root, &out.hits);
+    log::write("test", &format!("file_token files={f:?}"));
+    // name contains "auth", name does not contain "test"; a directory named test is fine
+    assert!(f.contains(&"src/api/auth.ts".to_string()), "{f:?}");
+    assert!(f.contains(&"src/test/auth_helper.ts".to_string()), "{f:?}");
+    assert!(!f.contains(&"src/auth.test.ts".to_string()), "{f:?}");
+    assert!(!f.contains(&"src/auth/login.ts".to_string()), "directory name must not count: {f:?}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// query_syntax/skim-input-from-rg-colon-fix
+#[test]
+fn skim_input_keeps_colons_in_text() {
+    let out = skim_search::query_syntax::skim_input_from_rg(concat!(r"C:\a.ts", ":12:3:foo: bar\nsrc/b.ts:1:1:x\n"));
+    log::write("test", &format!("skim_input colon out={out:?}"));
+    assert_eq!(out, concat!(r"C:\a.ts", "\t12\t3\tfoo: bar\nsrc/b.ts\t1\t1\tx"));
+}

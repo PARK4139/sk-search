@@ -264,9 +264,15 @@ fn schedule(app: &mut App, reason: &str) {
     app.coalesce.start(slint::TimerMode::SingleShot, COALESCE, move || {
         with_app(|app| start_search(app, gen));
     });
+    // Start sk now (off the UI thread) so its process startup overlaps the coalescing window.
+    if let Ok(sk) = &app.tools.sk {
+        let (engine, sk, expr, at) = (app.engine.clone(), sk.path.clone(), query_syntax::parse(&app.query).skim, app.changed_at);
+        std::thread::spawn(move || engine.prepare_early(gen, &sk, &expr, at));
+    }
 }
 
 fn clear_results(app: &mut App, gen: u64, stats: &str) {
+    app.engine.drop_early(); // no search for this generation
     app.results = Results::new(&app.root);
     app.results_gen = gen;
     refresh_rows(app);

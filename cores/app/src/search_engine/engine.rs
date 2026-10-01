@@ -10,7 +10,7 @@
 
 use std::io::{BufRead, BufReader, Read};
 use std::os::windows::process::CommandExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
@@ -24,11 +24,11 @@ use super::ripgrep::{self, Hit};
 use super::skim;
 use crate::query_syntax::ParsedQuery;
 
-/// First chunk is flushed quickly for first-result latency, later chunks are larger.
-const FIRST_FLUSH: Duration = Duration::from_millis(3);
+/// The first chunk is flushed as soon as the available rg output has been drained
+/// (first-result latency); later chunks are batched up to `NEXT_FLUSH` / `MAX_CHUNK`.
 const NEXT_FLUSH: Duration = Duration::from_millis(30);
 const MAX_CHUNK: usize = 5000;
-const POLL: Duration = Duration::from_millis(2);
+const POLL: Duration = Duration::from_millis(1);
 
 #[derive(Debug, Clone)]
 pub struct Request {
@@ -59,6 +59,8 @@ struct Procs {
 pub struct Engine {
     current: Arc<AtomicU64>,
     procs: Arc<Mutex<Procs>>,
+    /// sk spawned at query-change time for the pending generation (before coalescing ends)
+    early: Arc<Mutex<Option<(u64, PreparedSk)>>>,
 }
 
 impl Engine {
@@ -83,6 +85,40 @@ impl Engine {
 
     pub fn is_current(&self, generation: u64) -> bool {
         self.current() == generation
+    }
+
+    /// Spawns sk for `generation` right at query change so its startup overlaps with the
+    /// 20ms coalescing window. Replaces (and releases) any previous early sk.
+    pub fn prepare_early(&self, generation: u64, sk: &Path, expr: &str, changed_at: Instant) {
+        let prepared = match prepare_sk(self, generation, sk, expr, changed_at) {
+            Ok(p) => p,
+            Err(e) => {
+                log::write("search_engine", &format!("generation={generation} early sk spawn failed: {e}"));
+                None
+            }
+        };
+        let old = self.early.lock().ok().and_then(|mut slot| match prepared {
+            Some(p) => slot.replace((generation, p)),
+            None => slot.take(),
+        });
+        discard(self, old.map(|o| o.1));
+    }
+
+    /// Takes the early sk if it belongs to `generation`; a stale one is released.
+    fn take_early(&self, generation: u64) -> Option<PreparedSk> {
+        let taken = self.early.lock().ok()?.take()?;
+        if taken.0 == generation {
+            Some(taken.1)
+        } else {
+            discard(self, Some(taken.1));
+            None
+        }
+    }
+
+    /// Releases the early sk (search not started: invalid root, empty query).
+    pub fn drop_early(&self) {
+        let old = self.early.lock().ok().and_then(|mut slot| slot.take());
+        discard(self, old.map(|o| o.1));
     }
 
     /// Generations of the rg/sk processes currently alive under this engine.
@@ -185,8 +221,10 @@ fn run<F: Fn(Event)>(engine: Engine, req: Request, sink: F) {
         "search_engine",
         &format!("generation={gen} rg_spawn_ms={:.1} pid={pid}", ms(req.changed_at.elapsed())),
     );
-    // sk startup overlaps with rg; used for the first chunk (first-result latency, AC-103)
-    let mut prepared = match prepare_sk(&engine, &req) {
+    // sk for the first chunk: spawned at query change (Engine::prepare_early) or now,
+    // so its startup overlaps with coalescing / rg (first-result latency, AC-103)
+    let early = engine.take_early(gen);
+    let mut prepared = match early.map_or_else(|| prepare_sk(&engine, gen, &req.sk, &req.query.skim, req.changed_at), |p| Ok(Some(p))) {
         Ok(p) => p,
         Err(e) => {
             log::write("search_engine", &format!("generation={gen} error=sk spawn failed: {e}"));
@@ -237,16 +275,34 @@ fn run<F: Fn(Event)>(engine: Engine, req: Request, sink: F) {
             log::write("search_engine", &format!("cancelled generation={gen} worker_exit sent={total}"));
             return;
         }
-        match rx.recv_timeout(POLL) {
-            Ok(hit) => {
-                raw_total += 1;
-                chunk_started.get_or_insert_with(Instant::now);
-                chunk.push(hit);
+        let mut next = rx.recv_timeout(POLL);
+        loop {
+            match next {
+                Ok(hit) => {
+                    raw_total += 1;
+                    // `!file:` (not an rg glob: it would also skip matching directories)
+                    if !req.query.scope.excludes_file(&hit.path) {
+                        chunk_started.get_or_insert_with(Instant::now);
+                        chunk.push(hit);
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => break,
+                Err(RecvTimeoutError::Disconnected) => {
+                    eof = true;
+                    break;
+                }
             }
-            Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => eof = true,
+            if chunk.len() >= MAX_CHUNK {
+                break;
+            }
+            // drain what rg has already produced without waiting
+            next = match rx.try_recv() {
+                Ok(h) => Ok(h),
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => Err(RecvTimeoutError::Disconnected),
+            };
         }
-        let due = chunk_started.is_some_and(|t| t.elapsed() >= if first_sent { NEXT_FLUSH } else { FIRST_FLUSH });
+        let due = !first_sent || chunk_started.is_some_and(|t| t.elapsed() >= NEXT_FLUSH);
         if !chunk.is_empty() && (eof || due || chunk.len() >= MAX_CHUNK) {
             let batch = std::mem::take(&mut chunk);
             chunk_started = None;
@@ -273,6 +329,11 @@ fn run<F: Fn(Event)>(engine: Engine, req: Request, sink: F) {
                 }
                 first_sent = true;
                 sink(Event::Batch { generation: gen, hits: kept });
+            }
+            if !eof && prepared.is_none() {
+                // more output follows: start the next chunk's sk now (after the batch was sent,
+                // so it stays off the first-result path) to overlap its startup with rg
+                prepared = prepare_sk(&engine, gen, &req.sk, &req.query.skim, req.changed_at).unwrap_or(None);
             }
         }
         if eof && chunk.is_empty() {
@@ -318,16 +379,20 @@ struct PreparedSk {
 }
 
 /// Spawns and tracks sk for the next chunk. `Ok(None)` if the expression is empty or cancelled.
-fn prepare_sk(engine: &Engine, req: &Request) -> std::io::Result<Option<PreparedSk>> {
-    if req.query.skim.trim().is_empty() {
+fn prepare_sk(engine: &Engine, generation: u64, sk: &Path, expr: &str, changed_at: Instant) -> std::io::Result<Option<PreparedSk>> {
+    if expr.trim().is_empty() {
         return Ok(None);
     }
     let spawned = Instant::now();
-    let mut child = skim::spawn_filter(&req.sk, &req.query.skim)?;
+    let mut child = skim::spawn_filter(sk, expr)?;
     let pid = child.id();
     let stdin = child.stdin.take().expect("sk stdin");
     let stdout = child.stdout.take().expect("sk stdout");
-    Ok(engine.track(req.generation, "sk", child).map(|key| PreparedSk { key, pid, stdin, stdout, spawned }))
+    let prepared = engine.track(generation, "sk", child).map(|key| PreparedSk { key, pid, stdin, stdout, spawned });
+    if prepared.is_some() {
+        log::write("search_engine", &format!("generation={generation} sk_spawn_ms={:.1} pid={pid}", ms(changed_at.elapsed())));
+    }
+    Ok(prepared)
 }
 
 /// `Ok(None)` when the generation was cancelled while sk was running.
@@ -345,7 +410,7 @@ fn filter_chunk(
     let reused = prepared.is_some();
     let sk = match prepared {
         Some(p) => p,
-        None => match prepare_sk(engine, req)? {
+        None => match prepare_sk(engine, req.generation, &req.sk, &req.query.skim, req.changed_at)? {
             Some(p) => p,
             None => return Ok(None),
         },

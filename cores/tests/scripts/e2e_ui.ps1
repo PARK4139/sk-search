@@ -194,6 +194,8 @@ MarkLog
 if (Keys $a ([byte[]](0x11, 0x53))) {
   $saved = WaitLog "\[preview_editor\] saved path="
   Log "ctrl+s: $saved"
+  Start-Sleep -Milliseconds 200
+  Shot $a.hwnd "e2e_toast_success"
 }
 
 # F. toast stack: 4 searches → max 3 visible; plus a warning
@@ -271,6 +273,12 @@ if ($dlg) {
 } else { Log "picker NOT found" }
 Close $a
 
+# K. settings persisted by the app (recent roots, editor) and restored on restart
+Log "settings after run 1: $((Get-Content "$tmp\settings.json" -Raw) -replace '\s+', ' ')"
+$a = Launch
+Log "restored root='$(GetValue $a.el 'search-root-input')' expected='$pick'"
+Close $a
+
 # ── run 2: editor=cursor ──
 Settings "cursor"
 $a = Launch
@@ -287,8 +295,8 @@ $a = Launch
 # System Default opens the file in the user's default app, which may be an app the user
 # is working in (e.g. VS Code). Opt-in only (-SystemOpen), and NEVER close or kill any
 # window/process this script did not start (closed/process/e2e-closed-user-vscode).
+Search $a "systemopen"   # selects open-test.txt (also used by the Explorer check below)
 if ($SystemOpen) {
-  Search $a "systemopen"
   MarkLog
   Invoke $a.el "open-file-button"
   $r = WaitLog "\[external_open\] open_file editor=system" 5000
@@ -315,5 +323,19 @@ if ($ex) {
   Log "explorer folder=$($ex.Document.Folder.Self.Path) selected=$($sel -join ';')"
   $ex.Quit()
 } else { Log "explorer window NOT found" }
+Close $a
+
+# ── run 4: failing rg → error toast ──
+# answers --version (so detection succeeds) but fails every search with exit 2 + stderr
+Set-Content -Encoding ascii "$bin\rg-fail.cmd" "@if `"%1`"==`"--version`" (echo ripgrep 0.0.0-fail& exit /b 0)`r`n@echo rg: permission denied 1>&2`r`n@exit /b 2"
+$cfg = @{ editor = "vscode"; recent_roots = @($ws); rg_path = "$bin\rg-fail.cmd" } | ConvertTo-Json
+[IO.File]::WriteAllText("$tmp\settings.json", $cfg)
+$a = Launch
+MarkLog
+SetValue $a.el "query-input" "login"
+$err = WaitLog "\[toast\] push .*kind=error"
+Log "error toast: $err"
+Start-Sleep -Milliseconds 200
+Shot $a.hwnd "e2e_toast_error"
 Close $a
 Log "e2e_ui finished"

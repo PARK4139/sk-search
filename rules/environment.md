@@ -58,6 +58,8 @@
 - 테스트 스크립트는 자신이 시작한 프로세스·창(PID, 또는 실행 전후 HWND 비교로 식별)만 닫거나 종료한다. 제목·이름 일치로 대상을 고르지 않는다. 사용자 기본 앱으로 파일을 여는 검증은 opt-in (`e2e_ui.ps1 -SystemOpen`) (`closed/process/e2e-closed-user-vscode`).
 - 키 입력 주입(`keybd_event`)은 skim-search가 foreground일 때만 보낸다 (사용자 앱으로 입력 금지). 전역 단축키 검증은 예외(등록된 hotkey가 가로챔).
 - PowerShell 5.1 스크립트에 한글이 있으면 UTF-8 **BOM**으로 저장한다 (BOM 없으면 ANSI로 읽혀 패턴이 깨짐).
+- 텍스트 일괄 치환 시 `awk -v`, perl 치환문은 백슬래시 escape를 해석한다. 본문은 파일/stdin으로 넘기고, 치환 후 제어문자(`\x07` 등)를 검사한다 (`closed/process/issue-text-escape-mangled`).
+- latency에 영향을 주는 변경은 release e2e 10회 측정으로 전후를 비교한다 (`closed/search_engine/next-sk-prespawn-slowed-first-result`).
 
 - e2e 전 항상 `cargo build`. `cargo test`는 `target\debug\skim-search.exe`를 갱신하지 않는다 (`closed/diagnostics/e2e-uses-stale-binary/70b8d276`).
 - 화면 캡처는 `PrintWindow`만 사용. `CopyFromScreen`은 겹친 다른 창(사용자 화면)을 캡처한다 (`closed/diagnostics/capture-includes-overlapping-windows/03e79abe`).

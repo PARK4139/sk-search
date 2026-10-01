@@ -3,23 +3,28 @@
 //! Splits a raw query into the Skim content expression (passed to sk) and
 //! filesystem scope filters (passed to rg as `--glob`).
 //!
-//! Scope tokens: `path:`, `!path:`, `ext:`, `!ext:`. Other tokens, including
+//! Scope tokens: `path:`, `!path:`, `ext:`, `!ext:`, `file:`, `!file:`. Other tokens, including
 //! quoted ones like `'path:src`, stay in the Skim expression.
 //! A scope token with an empty value (`path:` while typing) is dropped.
 //!
 //! `path:X` semantics (handover does not define it): directory path `X` at any
 //! depth below the search root, e.g. `path:src` → `**/src/**`.
+//!
+//! `file:X` (handover §8, optional in v1): file name contains `X` (rg glob `*X*`, files only).
+//! `!file:X` is applied to hit paths in Rust: an rg exclude glob would also skip
+//! directories whose name contains `X`.
 
 use common::log;
 
-/// Scope keys. Adding `file:` later (handover §8) means adding a variant here.
+/// Scope keys (handover §8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScopeKey {
     Path,
     Ext,
+    File,
 }
 
-const SCOPE_KEYS: [(&str, ScopeKey); 2] = [("path:", ScopeKey::Path), ("ext:", ScopeKey::Ext)];
+const SCOPE_KEYS: [(&str, ScopeKey); 3] = [("path:", ScopeKey::Path), ("ext:", ScopeKey::Ext), ("file:", ScopeKey::File)];
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Scope {
@@ -27,6 +32,8 @@ pub struct Scope {
     pub exclude_paths: Vec<String>,
     pub include_exts: Vec<String>,
     pub exclude_exts: Vec<String>,
+    pub include_files: Vec<String>,
+    pub exclude_files: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,24 +55,12 @@ pub fn skim_input_from_rg(rg_output: &str) -> String {
     let mut records = Vec::new();
     let mut malformed = 0usize;
     for line in rg_output.lines() {
-        let mut fields = line.rsplitn(4, ':');
-        let Some(text) = fields.next() else {
-            malformed += 1;
-            continue;
-        };
-        let Some(column) = fields.next().filter(|v| v.parse::<u64>().is_ok()) else {
-            malformed += 1;
-            continue;
-        };
-        let Some(line_number) = fields.next().filter(|v| v.parse::<u64>().is_ok()) else {
-            malformed += 1;
-            continue;
-        };
-        let Some(path) = fields.next().filter(|v| !v.is_empty()) else {
-            malformed += 1;
-            continue;
-        };
-        records.push(format!("{path}\t{line_number}\t{column}\t{text}"));
+        match split_rg_record(line) {
+            Some((path, line_number, column, text)) => {
+                records.push(format!("{path}\t{line_number}\t{column}\t{text}"))
+            }
+            None => malformed += 1,
+        }
     }
     log::write(
         "query_syntax",
@@ -75,6 +70,19 @@ pub fn skim_input_from_rg(rg_output: &str) -> String {
         ),
     );
     records.join("\n")
+}
+
+/// Splits `path:line:column:text` left to right. A Windows drive prefix (`C:`) is part of
+/// the path, and the text may contain `:` (closed/query_syntax/skim-input-from-rg-colon-in-text).
+fn split_rg_record(line: &str) -> Option<(&str, &str, &str, &str)> {
+    let b = line.as_bytes();
+    let skip = if b.len() > 2 && b[0].is_ascii_alphabetic() && b[1] == b':' { 2 } else { 0 };
+    let p_end = skip + line[skip..].find(':')?;
+    let rest = &line[p_end + 1..];
+    let (line_number, rest) = rest.split_once(':')?;
+    let (column, text) = rest.split_once(':')?;
+    let numeric = |s: &str| !s.is_empty() && s.bytes().all(|c| c.is_ascii_digit());
+    (p_end > 0 && numeric(line_number) && numeric(column)).then_some((&line[..p_end], line_number, column, text))
 }
 
 fn scope_token(token: &str) -> Option<(bool, ScopeKey, &str)> {
@@ -104,6 +112,8 @@ pub fn parse(raw: &str) -> ParsedQuery {
             (ScopeKey::Path, true) => &mut scope.exclude_paths,
             (ScopeKey::Ext, false) => &mut scope.include_exts,
             (ScopeKey::Ext, true) => &mut scope.exclude_exts,
+            (ScopeKey::File, false) => &mut scope.include_files,
+            (ScopeKey::File, true) => &mut scope.exclude_files,
         };
         list.push(
             value
@@ -124,22 +134,46 @@ impl Scope {
             && self.exclude_paths.is_empty()
             && self.include_exts.is_empty()
             && self.exclude_exts.is_empty()
+            && self.include_files.is_empty()
+            && self.exclude_files.is_empty()
+    }
+
+    /// `!file:` filter: true if the file name of `path` contains an excluded fragment.
+    pub fn excludes_file(&self, path: &str) -> bool {
+        let name = path.rsplit(['\\', '/']).next().unwrap_or(path);
+        self.exclude_files.iter().any(|f| name.contains(f.as_str()))
+    }
+
+    /// File-name patterns from `file:` × `ext:` includes (`*auth*.ts`); empty = no name constraint.
+    fn name_patterns(&self) -> Vec<String> {
+        match (self.include_files.is_empty(), self.include_exts.is_empty()) {
+            (true, true) => Vec::new(),
+            (true, false) => self.include_exts.iter().map(|e| format!("*.{e}")).collect(),
+            (false, true) => self.include_files.iter().map(|f| format!("*{f}*")).collect(),
+            (false, false) => self
+                .include_files
+                .iter()
+                .flat_map(|f| self.include_exts.iter().map(move |e| format!("*{f}*.{e}")))
+                .collect(),
+        }
     }
 
     /// rg `--glob` values.
     ///
     /// rg ORs multiple include globs, so includes are combined into one glob per
-    /// (path × ext) pair: `path:src ext:ts` → `**/src/**/*.ts` (AND).
+    /// (path × name) pair: `path:src ext:ts` → `**/src/**/*.ts` (AND).
     /// Exclude globs (`!…`) always apply on top (AND).
     pub fn rg_globs(&self) -> Vec<String> {
         let mut globs = Vec::new();
-        match (self.include_paths.is_empty(), self.include_exts.is_empty()) {
-            (true, true) => {}
-            (false, true) => globs.extend(self.include_paths.iter().map(|p| format!("**/{p}/**"))),
-            (true, false) => globs.extend(self.include_exts.iter().map(|e| format!("*.{e}"))),
-            (false, false) => {
-                for p in &self.include_paths {
-                    globs.extend(self.include_exts.iter().map(|e| format!("**/{p}/**/*.{e}")));
+        let names = self.name_patterns();
+        if self.include_paths.is_empty() {
+            globs.extend(names.iter().cloned());
+        } else {
+            for p in &self.include_paths {
+                if names.is_empty() {
+                    globs.push(format!("**/{p}/**"));
+                } else {
+                    globs.extend(names.iter().map(|n| format!("**/{p}/**/{n}")));
                 }
             }
         }
