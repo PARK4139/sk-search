@@ -205,7 +205,7 @@ pub fn init(window: &MainWindow, tools: Tools) {
             w.set_preview_dirty(dirty);
             let lines = preview_editor::line_count(&text);
             if lines != preview_editor::line_count(&w.get_preview_gutter()) {
-                w.set_preview_gutter(preview_editor::gutter(&text).into());
+                set_gutter(&w, &text);
             }
         });
     });
@@ -421,13 +421,19 @@ fn refresh_rows(app: &App) {
     }
 }
 
+/// Gutter numbers and the line count used for the editor line height.
+fn set_gutter(w: &MainWindow, text: &str) {
+    w.set_preview_gutter(preview_editor::gutter(text).into());
+    w.set_preview_line_count(preview_editor::line_count(text) as i32);
+}
+
 fn clear_preview(app: &mut App) {
     app.doc = None;
     if let Some(w) = app.window.upgrade() {
         w.set_preview_path("".into());
         w.set_preview_loc("".into());
         w.set_preview_text("".into());
-        w.set_preview_gutter("1".into());
+        set_gutter(&w, "");
         w.set_preview_line(0);
         w.set_preview_dirty(false);
     }
@@ -447,13 +453,13 @@ fn load_preview(app: &mut App) {
         match preview_editor::load(&path) {
             Ok(doc) => {
                 w.set_preview_text(doc.text.clone().into());
-                w.set_preview_gutter(preview_editor::gutter(&doc.text).into());
+                set_gutter(&w, &doc.text);
                 w.set_preview_editable(true);
                 app.doc = Some(doc);
             }
             Err(reason) => {
                 let lossy = String::from_utf8_lossy(&std::fs::read(&path).unwrap_or_default()).replace("\r\n", "\n");
-                w.set_preview_gutter(preview_editor::gutter(&lossy).into());
+                set_gutter(&w, &lossy);
                 w.set_preview_text(lossy.into());
                 w.set_preview_editable(false);
                 app.doc = None;

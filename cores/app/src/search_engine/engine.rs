@@ -185,6 +185,16 @@ fn run<F: Fn(Event)>(engine: Engine, req: Request, sink: F) {
         "search_engine",
         &format!("generation={gen} rg_spawn_ms={:.1} pid={pid}", ms(req.changed_at.elapsed())),
     );
+    // sk startup overlaps with rg; used for the first chunk (first-result latency, AC-103)
+    let mut prepared = match prepare_sk(&engine, &req) {
+        Ok(p) => p,
+        Err(e) => {
+            log::write("search_engine", &format!("generation={gen} error=sk spawn failed: {e}"));
+            engine.finish(rg_key);
+            sink(Event::Error { generation: gen, message: format!("sk 실행 실패: {e}") });
+            return;
+        }
+    };
 
     let err_reader = std::thread::spawn(move || {
         let mut s = String::new();
@@ -223,6 +233,7 @@ fn run<F: Fn(Event)>(engine: Engine, req: Request, sink: F) {
     loop {
         if !engine.is_current(gen) {
             engine.finish(rg_key); // already killed by bump; reaps if still tracked
+            discard(&engine, prepared.take());
             log::write("search_engine", &format!("cancelled generation={gen} worker_exit sent={total}"));
             return;
         }
@@ -239,7 +250,7 @@ fn run<F: Fn(Event)>(engine: Engine, req: Request, sink: F) {
         if !chunk.is_empty() && (eof || due || chunk.len() >= MAX_CHUNK) {
             let batch = std::mem::take(&mut chunk);
             chunk_started = None;
-            let kept = match filter_chunk(&engine, &req, batch) {
+            let kept = match filter_chunk(&engine, &req, batch, prepared.take()) {
                 Ok(Some(k)) => k,
                 Ok(None) => continue, // cancelled while sk ran
                 Err(e) => {
@@ -269,6 +280,7 @@ fn run<F: Fn(Event)>(engine: Engine, req: Request, sink: F) {
         }
     }
 
+    discard(&engine, prepared.take()); // no output at all: release the unused sk
     let status = engine.finish(rg_key);
     let malformed = reader.join().unwrap_or(0);
     let stderr = err_reader.join().unwrap_or_default();
@@ -296,28 +308,61 @@ fn run<F: Fn(Event)>(engine: Engine, req: Request, sink: F) {
     sink(Event::Done { generation: gen, total, elapsed });
 }
 
-/// `Ok(None)` when the generation was cancelled while sk was running.
-fn filter_chunk(engine: &Engine, req: &Request, batch: Vec<Hit>) -> std::io::Result<Option<Vec<Hit>>> {
+/// An sk process spawned ahead of its chunk (startup overlaps with rg).
+struct PreparedSk {
+    key: u64,
+    pid: u32,
+    stdin: std::process::ChildStdin,
+    stdout: std::process::ChildStdout,
+    spawned: Instant,
+}
+
+/// Spawns and tracks sk for the next chunk. `Ok(None)` if the expression is empty or cancelled.
+fn prepare_sk(engine: &Engine, req: &Request) -> std::io::Result<Option<PreparedSk>> {
     if req.query.skim.trim().is_empty() {
-        return Ok(Some(batch));
+        return Ok(None);
     }
-    let t = Instant::now();
+    let spawned = Instant::now();
     let mut child = skim::spawn_filter(&req.sk, &req.query.skim)?;
     let pid = child.id();
     let stdin = child.stdin.take().expect("sk stdin");
     let stdout = child.stdout.take().expect("sk stdout");
-    let Some(key) = engine.track(req.generation, "sk", child) else { return Ok(None) };
+    Ok(engine.track(req.generation, "sk", child).map(|key| PreparedSk { key, pid, stdin, stdout, spawned }))
+}
+
+/// `Ok(None)` when the generation was cancelled while sk was running.
+/// `prepared` is a pre-spawned sk for this chunk; otherwise one is spawned now.
+fn filter_chunk(
+    engine: &Engine,
+    req: &Request,
+    batch: Vec<Hit>,
+    prepared: Option<PreparedSk>,
+) -> std::io::Result<Option<Vec<Hit>>> {
+    if req.query.skim.trim().is_empty() {
+        return Ok(Some(batch));
+    }
+    let t = Instant::now();
+    let reused = prepared.is_some();
+    let sk = match prepared {
+        Some(p) => p,
+        None => match prepare_sk(engine, req)? {
+            Some(p) => p,
+            None => return Ok(None),
+        },
+    };
     let records: Vec<(usize, &str)> = batch.iter().enumerate().map(|(i, h)| (i, h.text.as_str())).collect();
-    let ids = skim::exchange(stdin, stdout, &records)?;
-    if engine.finish(key).is_none() {
+    let ids = skim::exchange(sk.stdin, sk.stdout, &records)?;
+    if engine.finish(sk.key).is_none() {
         return Ok(None); // killed by bump
     }
     log::write(
         "search_engine",
         &format!(
-            "generation={} sk_run_ms={:.1} pid={pid} in={} out={} payload=id\\tcontent nth=2..",
+            "generation={} sk_run_ms={:.1} sk_age_ms={:.1} prespawned={reused} pid={} in={} out={} payload=id\tcontent nth=2..",
             req.generation,
             ms(t.elapsed()),
+            ms(sk.spawned.elapsed()),
+            sk.pid,
             batch.len(),
             ids.len()
         ),
@@ -329,4 +374,13 @@ fn filter_chunk(engine: &Engine, req: &Request, batch: Vec<Hit>) -> std::io::Res
         }
     }
     Ok(Some(batch.into_iter().zip(keep).filter_map(|(h, k)| k.then_some(h)).collect()))
+}
+
+/// Releases an unused pre-spawned sk: closing stdin makes it exit, then it is reaped.
+fn discard(engine: &Engine, prepared: Option<PreparedSk>) {
+    if let Some(p) = prepared {
+        drop(p.stdin);
+        drop(p.stdout);
+        engine.finish(p.key);
+    }
 }

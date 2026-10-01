@@ -65,6 +65,7 @@ export component MainWindow inherits Window {
     in property <string> preview-loc;
     in-out property <string> preview-text;
     in property <string> preview-gutter: "1";
+    in property <int> preview-line-count: 1;
     in property <int> preview-line: 0;
     in property <int> preview-scroll-seq: 0;
     in property <bool> preview-editable: true;
@@ -96,15 +97,9 @@ export component MainWindow inherits Window {
     }
 
     property <length> row-h: 22px;
-    property <length> line-h: probe.preferred-height;
+    // Line advance of the editor itself (a separate probe Text differs by ~5% and drifts).
+    property <length> line-h: editor.preferred-height / max(1, root.preview-line-count);
     property <length> gutter-w: 56px;
-
-    probe := Text {
-        text: "0";
-        font-family: Theme.mono;
-        font-size: 13px;
-        visible: false;
-    }
 
     keys := FocusScope {
         focus-on-click: false;
@@ -195,7 +190,9 @@ export component MainWindow inherits Window {
                 Rectangle {
                     accessible-role: groupbox;
                     accessible-label: "result-panel";
-                    horizontal-stretch: 1;
+                    // fixed ratio: content (long error text, empty list) must not change panel widths
+                    preferred-width: 0px;
+                    horizontal-stretch: 45;
                     background: Theme.panel;
                     border-color: Theme.border;
                     border-width: 1px;
@@ -205,7 +202,9 @@ export component MainWindow inherits Window {
                         Text {
                             accessible-role: text;
                             accessible-label: "result-stats";
+                            accessible-value: root.stats;
                             text: root.stats;
+                            overflow: elide;
                             color: Theme.text;
                         }
 
@@ -288,7 +287,8 @@ export component MainWindow inherits Window {
 
                 // right: preview / editor
                 Rectangle {
-                    horizontal-stretch: 1;
+                    preferred-width: 0px;
+                    horizontal-stretch: 55;
                     background: Theme.panel;
                     border-color: Theme.border;
                     border-width: 1px;
@@ -300,6 +300,7 @@ export component MainWindow inherits Window {
                             Text {
                                 accessible-role: text;
                                 accessible-label: "preview-path";
+                                accessible-value: root.preview-path;
                                 horizontal-stretch: 1;
                                 text: (root.preview-dirty ? "● " : "") + root.preview-path;
                                 color: Theme.text;
@@ -309,6 +310,7 @@ export component MainWindow inherits Window {
                             Text {
                                 accessible-role: text;
                                 accessible-label: "preview-loc";
+                                accessible-value: root.preview-loc;
                                 text: root.preview-loc;
                                 color: Theme.muted;
                                 vertical-alignment: center;
@@ -395,6 +397,7 @@ export component MainWindow inherits Window {
             Text {
                 accessible-role: text;
                 accessible-label: "status-bar";
+                accessible-value: root.status;
                 text: root.status;
                 color: Theme.muted;
             }

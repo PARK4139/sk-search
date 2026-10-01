@@ -1,6 +1,5 @@
-| 우선순위 | UUID | 근거 |
+﻿| 우선순위 | UUID | 근거 |
 |---|---|---|
-| Critical | 2042b048 | 근거: FR-105, AC-102, handover §4 / showreel 00:02~00:03 |
 | Critical | c910da32 | 근거: FR-108, AC-104, AC-107, handover §3.2 / showreel 00:04 |
 | Critical | 61a0bd37 | 근거: FR-126, AC-110, handover §19 |
 | Critical | c854479d | 근거: FR-123, AC-108, handover §17 / showreel 00:08 |
@@ -58,3 +57,4 @@
 | Low | 9537a3f4 | 근거: showreel 00:01 (handover §24 미포함) |
 | Low | ac0481bf | 근거: showreel 00:01 (handover §5는 "최근 검색 경로 설정 보존"만 정의) |
 | Low | 59f15b31 | 근거: showreel 00:01, handover §20, §24 |
+| Low | dab0aa94 | 근거: handover §11 / 발생: query_syntax/skim-input-from-rg-colon-in-text |

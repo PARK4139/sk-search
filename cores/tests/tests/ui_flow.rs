@@ -44,6 +44,18 @@ fn toasts(w: &MainWindow) -> Vec<(String, String, String)> {
         .collect()
 }
 
+/// Highest toast id currently in the model.
+fn max_toast_id(w: &MainWindow) -> i32 {
+    let m = w.get_toasts();
+    (0..m.row_count()).filter_map(|i| m.row_data(i)).map(|t| t.id).max().unwrap_or(0)
+}
+
+/// A "검색 완료" toast newer than `mark` exists (the search started after `mark` finished).
+fn new_done(w: &MainWindow, mark: i32) -> bool {
+    let m = w.get_toasts();
+    (0..m.row_count()).filter_map(|i| m.row_data(i)).any(|t| t.id > mark && t.title == "검색 완료")
+}
+
 fn type_query(w: &MainWindow, q: &str) {
     w.set_query(q.into());
     w.invoke_query_edited(q.into());
@@ -72,6 +84,8 @@ struct Ctx {
     mark: Instant,
     gens: Vec<u64>,
     note: Vec<String>,
+    /// highest toast id seen before an action; used to wait for a *new* completion toast
+    toast_mark: i32,
 }
 
 #[test]
@@ -106,6 +120,7 @@ fn ui_flow() {
         mark: Instant::now(),
         gens: Vec::new(),
         note: Vec::new(),
+        toast_mark: 0,
     };
 
     let done_for = |w: &MainWindow, q: &str| toasts(w).iter().any(|t| t.1 == "검색 완료" && t.2.starts_with(&format!("{q} ·")));
@@ -302,6 +317,85 @@ fn ui_flow() {
                 assert!(w.get_stats().starts_with(&format!("{} 결과", rows.iter().filter(|r| !r.is_group).count()))
                     || rows.iter().any(|r| r.is_group && !r.expanded));
                 c.note.push(format!("md groups={groups:?} stats={}", w.get_stats()));
+                true
+            }),
+        ),
+        (
+            "group header click toggles; spaced path opens in preview",
+            Box::new(|w, c| {
+                let rows = app::rows_snapshot(w);
+                let g = rows.iter().find(|r| r.is_group && r.path.as_str() == "docs/sample file.md").expect("spaced file group").clone();
+                let expanded_of = |w: &MainWindow| app::rows_snapshot(w).iter().find(|r| r.is_group && r.group == g.group).unwrap().expanded;
+                let start = g.expanded;
+                w.invoke_row_clicked(g.group, -1);
+                assert_eq!(expanded_of(w), !start, "toggled");
+                w.invoke_row_clicked(g.group, -1);
+                assert_eq!(expanded_of(w), start, "toggled back");
+                if !start {
+                    w.invoke_row_clicked(g.group, -1);
+                }
+                let rows = app::rows_snapshot(w);
+                let line = rows.iter().find(|r| !r.is_group && r.group == g.group).expect("line row").clone();
+                w.invoke_row_clicked(line.group, line.index);
+                assert_eq!(w.get_preview_path().as_str(), "docs/sample file.md");
+                let disk = std::fs::read_to_string(c.root.join("docs").join("sample file.md")).unwrap();
+                assert_eq!(w.get_preview_text().as_str(), disk);
+                c.note.push("toggle + spaced path preview ok".into());
+                true
+            }),
+        ),
+        (
+            "invalid root: no search, warning toast",
+            Box::new(|w, c| {
+                let bad = c.root.join("README.md").display().to_string();
+                w.set_search_root(bad.clone().into());
+                w.invoke_root_edited(bad.into());
+                c.mark = Instant::now();
+                true
+            }),
+        ),
+        (
+            "wait invalid root handled",
+            Box::new(|w, c| {
+                if c.mark.elapsed() < Duration::from_millis(60) {
+                    return false;
+                }
+                assert!(w.get_stats().starts_with("검색 경로 오류"), "{}", w.get_stats());
+                assert!(app::rows_snapshot(w).is_empty());
+                assert!(toasts(w).iter().any(|t| t.0 == "warning" && t.1 == "검색 경로 오류"));
+                c.note.push(format!("invalid root stats={}", w.get_stats()));
+                true
+            }),
+        ),
+        (
+            "root change reruns current query",
+            Box::new(|w, c| {
+                c.toast_mark = max_toast_id(w);
+                let docs = c.root.join("docs").display().to_string();
+                w.set_search_root(docs.clone().into());
+                w.invoke_root_edited(docs.into());
+                true
+            }),
+        ),
+        // a completion toast newer than the root change (the previous "TODO ext:md" toast may still be visible)
+        ("wait rerun done", Box::new(|w, c| new_done(w, c.toast_mark))),
+        (
+            "rerun results are from new root only",
+            Box::new(|w, c| {
+                let groups: Vec<String> = app::rows_snapshot(w).iter().filter(|r| r.is_group).map(|r| r.path.to_string()).collect();
+                assert!(groups.iter().all(|p| !p.contains('/') || !p.starts_with("docs/")), "paths relative to new root: {groups:?}");
+                assert!(groups.contains(&"login-guide.md".to_string()) && !groups.contains(&"README.md".to_string()), "{groups:?}");
+                c.note.push(format!("rerun groups={groups:?}"));
+                true
+            }),
+        ),
+        (
+            "search error shows error toast",
+            Box::new(|w, c| {
+                let (current, _) = app::engine_snapshot();
+                app::deliver(Event::Error { generation: current, message: "rg: permission denied".into() });
+                assert!(toasts(w).iter().any(|t| t.0 == "error" && t.1 == "검색 오류" && t.2.contains("permission denied")));
+                c.note.push("error toast ok".into());
                 c.mark = Instant::now();
                 true
             }),
