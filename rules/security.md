@@ -16,7 +16,7 @@
 | ID | 항목 | 예 |
 |----|------|----|
 | SEC-SECRET | 비밀정보 | 토큰(`ghp_`, `github_pat_`, `xox?-`, `AKIA…`, `AIza…`), 개인키 블록, 비밀번호·API key 대입 |
-| SEC-LOCALPATH | 로컬 사용자 경로·계정명 | `C:\Users\<name>\`, `C:/Users/<name>/`, `/c/Users/<name>/` → 문서에는 `%USERPROFILE%` 사용 |
+| SEC-LOCALPATH | 로컬 사용자 경로·계정명 | `C:\Users\<name>\`, `C:/Users/<name>/`, `/c/Users/<name>/` → 문서에는 `%USERPROFILE%` 사용. Windows 공용 프로필(`Public`, `Default`, `Default User`, `All Users`)은 계정이 아니므로 허용 |
 | SEC-EMAIL | 개인 이메일 | 커밋 메타데이터·추가된 줄의 이메일 중 허용 목록(`*@users.noreply.github.com`, `noreply@github.com`, `noreply@anthropic.com`(Co-Authored-By), 문서·테스트 예약 도메인 `example.*`, `*.invalid`, `*.test`, `*.example`) 외 |
 | SEC-PATH | 공개 금지 경로 | `ref/actual/logs/`, `.venv/`, `target/`, `__pycache__/`, `*.env`, 사용자 설정 파일(`settings.json` 실사용본) |
 | SEC-VULN | 의존성 취약점 | `cores/Cargo.lock`, `cores/tests/py/uv.lock` 에서 설정 심각도 이상 |

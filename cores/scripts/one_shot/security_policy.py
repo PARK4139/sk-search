@@ -48,8 +48,12 @@ SECRET_PATTERNS = [
     ("assigned-secret", re.compile(
         r"(?i)\b(password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)\b\s*[:=]\s*['\"]([^'\"\s]{8,})['\"]")),
 ]
-# user directory followed by a concrete name (placeholders like <name>, %USERPROFILE%, {user} pass)
-LOCALPATH = re.compile(r"(?i)(?:\b[a-z]:[\\/]{1,2}|/[a-z]/|/home/)users?[\\/]{1,2}(?![<%{$])([A-Za-z0-9._ -]+?)(?=[\\/'\"`\s]|$)")
+# user directory followed by a concrete name (placeholders like <name>, %USERPROFILE%, {user} pass;
+# Windows shared profiles such as C:\Users\Public are not accounts and pass)
+LOCALPATH = re.compile(
+    r"(?i)(?:\b[a-z]:[\\/]{1,2}|/[a-z]/|/home/)users?[\\/]{1,2}"
+    r"(?![<%{$]|(?:public|default|default user|all users)(?=[\\/'\"`\s]|$))"
+    r"([A-Za-z0-9._ -]+?)(?=[\\/'\"`\s]|$)")
 EMAIL = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
 EMAIL_ALLOW = [
     re.compile(r"(?i)^[A-Za-z0-9._%+\-]+@users\.noreply\.github\.com$"),
@@ -278,8 +282,9 @@ def self_test() -> int:
         def reset_to_remote() -> None:
             git(repo, "reset", "-q", "--hard", "origin/main")
 
-        commit({"README.md": "docs at %USERPROFILE%\\Downloads and C:\\Users\\<name>\\x\n"}, "clean")
-        expect("new branch, clean, placeholders allowed", run(), 0, set())
+        commit({"README.md": "docs at %USERPROFILE%\\Downloads and C:\\Users\\<name>\\x\n"
+                             "e2e at C:\\Users\\Public\\skim-search-e2e and C:\\Users\\Default\\x\n"}, "clean")
+        expect("new branch, clean, placeholders and shared profiles allowed", run(), 0, set())
         git(repo, "push", "-q", "origin", "main")
         expect("nothing to push", run(), 0, set())
 
