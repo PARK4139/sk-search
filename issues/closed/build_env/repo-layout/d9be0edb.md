@@ -25,7 +25,18 @@ target/                     cargo 출력 (git 제외), one-shot 격리 빌드는
 6. 전체 검증을 실행한다.
 
 # actual result
-미착수. 현재: 워크스페이스 `cores/`, 빌드 출력 `cores/target/`(14GB), 스크립트 `cores/scripts/`와 루트(`test.cmd`, `one-shot.*`, `one_shot.py`), Python 프로젝트 `cores/tests/py`. 경로 계산이 5곳에 흩어져 있음(`parents[N]` 깊이 각각 다름).
+PASS (2026-10-02, commit 0841838).
+- 이동: `cores/{Cargo.*,app,common,tests}` → `cores/rust/`; `cores/tests/py` + `cores/scripts` → `cores/python/` (src layout, 패키지 `skim_search`: `diagnostics/one_shot/`, `security_policy.py`, `issue_ids.py`; `tests/{support,e2e,one_shot,security,issue_ids}`, `benchmarks/{rg,sk}`); 진입점 `.cmd/.ps1` → `scripts/` (`test.cmd`, `one-shot`, `security-policy`, `issue-id`, `one_shot/{stage}`, launch.ps1는 `python -m` 모듈 실행); `config.json` → `configs/one-shot.json`, `security-exceptions.json` → `configs/`; 루트 `one_shot.py` 제거(`skim_search.diagnostics.one_shot.__main__`). `cores/target/`(14GB) 삭제, 루트 `.cargo/config.toml` `target-dir = "target"`. pyproject 이름 `skim-search`, `uv lock` 갱신.
+- 경로 조정: 앱 로그 `CARGO_MANIFEST_DIR/../../..`, pipeline(ROOT·단계 스크립트·CI cwd `cores/rust`·모듈 실행 cwd `cores/python`·one-shot 빌드 `target/one-shot`·cargo-audit/pip-audit 경로), security_policy·issue_ids ROOT/예외 파일, 테스트 경로 SSOT `tests/support/paths.py`, test_pipeline 임시 저장소 구성(단독 push 진입 테스트는 PYTHONPATH로 임시 복사본 import → 실제 저장소에 이슈 생성 없음).
+- 검증:
+  - `cores/rust`에서 `cargo build` → 루트 `target/debug/skim-search.exe`, `cores/target` 없음.
+  - `%TEMP%`에서 `scripts\test.cmd` 전체 `ALL PASSED` exit 0 (`ref/actual/logs/test-cmd-full.log`): cargo build/test/clippy, Python 33개(pipeline 25, issue_ids 7, security policy 1, `python-unittest.log`), e2e_detection 11/11, e2e_ui 21/21, bench.
+  - `%TEMP%`에서 `scripts\security-policy.cmd` exit 0, `scripts\issue-id.cmd --help`, `scripts\test.cmd quick` PASS.
+  - `%TEMP%`에서 `scripts\one-shot.cmd --bump minor` → run `20261002-024248-5e7cfc0e` 전 단계 passed, `target/one-shot/release/skim-search.exe --version` = `skim-search 0.5.0 0841838…`, origin/main == 0841838.
+  - `rules/*.md`, `README.md`, `.gitignore`에 옛 경로 없음 (`git grep`, closed 이슈·`ref/closed` 과거 기록 제외).
+- 결정: e2e 스크립트 이름은 테스트 프레임워크 대상이 아니라 실행 스크립트라 `tests/e2e/detection.py`, `ui.py` (test_ 접두사 없음). security self-test는 모듈에 두고 `tests/security/test_policy.py`가 호출.
+
+이전 상태: 워크스페이스 `cores/`, 빌드 출력 `cores/target/`(14GB), 스크립트 `cores/scripts/`와 루트(`test.cmd`, `one-shot.*`, `one_shot.py`), Python 프로젝트 `cores/tests/py`. 경로 계산이 5곳에 흩어져 있음(`parents[N]` 깊이 각각 다름).
 배경: one-shot CI가 공유 `cores/target/`을 쓰다가 동시 빌드에 exe가 덮어써짐 (`closed/diagnostics/one-shot-concurrent-build-overwrites-exe`).
 
 # expected result
