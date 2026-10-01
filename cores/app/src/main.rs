@@ -5,9 +5,18 @@ use skim_search::{app, MainWindow};
 use slint::ComponentHandle;
 
 fn main() -> Result<(), slint::PlatformError> {
+    if std::env::args().any(|arg| arg == "--version") {
+        println!("skim-search {} {}", env!("SKIM_SEARCH_BUILD_VERSION"), env!("SKIM_SEARCH_BUILD_SHA"));
+        return Ok(());
+    }
+    if std::env::args().any(|arg| arg == "--version") {
+        println!("skim-search {} {}", env!("SKIM_SEARCH_BUILD_VERSION"), env!("SKIM_SEARCH_BUILD_SHA"));
+        return Ok(());
+    }
     log::write(
         "app",
-        &format!("start pid={} log={}", std::process::id(), log::log_path().display()),
+        &format!("start pid={} log={} version={} sha={}", std::process::id(), log::log_path().display(),
+                 env!("SKIM_SEARCH_BUILD_VERSION"), env!("SKIM_SEARCH_BUILD_SHA")),
     );
 
     let window = MainWindow::new()?;

@@ -11,7 +11,8 @@
 | issue 착수 / 완료 | `issue.md`, `families.md` |
 | 코드 구현 | `implementation.md`, `families.md`, `environment.md` |
 | 검증 / 증거 수집 | `environment.md`, `issue.md#완료-조건과-보고` |
-| one-shot 파이프라인 구현 / 실행 | `one-shot.md`, `environment.md` |
+| one-shot 파이프라인 구현 / 실행 | `one-shot.md`, `environment.md`, `security.md` |
+| push (수동 포함) | `security.md` |
 | 작업 중 생긴 일 기록 | `issue.md#작업-중-생긴-일`, `issue.md#파일-템플릿` |
 | 규칙 수정 | 이 파일 `#규칙-수정` |
 
@@ -25,6 +26,7 @@
 | `implementation.md` | `cores/` 코드 구조, 의존 방향, 테스트·로그 규칙 |
 | `environment.md` | 외부 도구 경로, cargo 설정, 증거 경로, 환경변수, 검증 스크립트 |
 | `one-shot.md` | commit → CI → CD → push 파이프라인, 언어별 책임, 실행 증거 |
+| `security.md` | push 전 보안 위험 검사: 범위, 차단 항목(SEC-*), 예외, 결과 기록 |
 
 ## 참조 표기
 

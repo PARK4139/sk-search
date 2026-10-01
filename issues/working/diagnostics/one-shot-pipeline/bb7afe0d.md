@@ -2,6 +2,7 @@
 one-shot으로 commit → CI → CD → push 파이프라인 구현
 
 # pre-condition
+- 현재 버전 정책: 사용자 재개 지시에 따라 `diagnostics/one-shot-agent-classification/f88f1527`에서 자동 분류를 구현한다. 실제 push는 사용자 지시에 따라 차단한다.
 - Git 저장소, Rust 빌드 도구, Python 및 PowerShell 실행 환경
 - commit 범위, CI 명령, 배포 대상·방법·확인 절차, push 원격·브랜치 설정 필요
 

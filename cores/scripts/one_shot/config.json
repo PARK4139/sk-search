@@ -1,0 +1,14 @@
+{
+  "commit_paths": ["."],
+  "commit_message": "Apply workspace changes via one-shot",
+  "initial_version": "0.1.0",
+  "initial_base_sha": "d158201",
+  "remote": "origin",
+  "branch": "master",
+  "codex": ["codex"],
+  "gitleaks": ["gitleaks"],
+  "cargo_audit": ["cargo", "audit"],
+  "timeout_seconds": 1800,
+  "agent_timeout_seconds": 300,
+  "lock_timeout_seconds": 600
+}

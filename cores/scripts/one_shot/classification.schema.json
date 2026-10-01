@@ -1,0 +1,10 @@
+{
+  "type": "object", "additionalProperties": false,
+  "required": ["level", "reason", "base_sha", "target_sha"],
+  "properties": {
+    "level": {"type": "string", "enum": ["major", "minor", "patch"]},
+    "reason": {"type": "string", "minLength": 1},
+    "base_sha": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+    "target_sha": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}
+  }
+}
