@@ -76,6 +76,13 @@
 - 실행 ID, 커밋 SHA, 단계 순서, 시작·종료 시각, 실행 명령, 종료 코드, stdout/stderr, 배포 산출물·대상·결과, push 원격·브랜치·결과를 기록한다. 인증 정보는 로그에 남기지 않는다.
 - 성공·실패·시간 초과 시 실행한 자식 프로세스와 임시 자원을 정리한다.
 
+## 실패 이슈
+
+- 실패하면 비정상 종료하고 `failure.json` 등 별도 실패 산출물을 만들지 않는다. 실패의 SSOT는 `issues/backlog/diagnostics/one-shot-failure/{uuid:8}.md` 하나다 (`issue.md#작업-중-생긴-일` 예외). 구현: `cores/scripts/one_shot/failure_issue.py`.
+- 가장 바깥 프로세스만 기록한다(중첩 단계는 보고만). 중첩 래퍼의 `FAIL:` 줄을 따라 실제 실패 명령을 찾고, 실패 단계·항목, 전체 SHA(미확보면 사유), 실행 ID·시각, 종료 코드/시간 초과/실행 불가, 재현 명령, 마스킹한 오류 요약(마지막 20줄), 증거 로그 경로를 적는다. 원인·조치는 확인 전 `미확인`/`없음`.
+- 키는 `sha | stage | item`. 같은 키(이슈 기록·생성 증거만 다른 SHA 포함)의 backlog/working 이슈가 있으면 `- 재발` 줄만 추가하고 우선순위 행을 늘리지 않는다. 기록은 `ref/actual/logs/one-shot/.failure-issue.lock`으로 직렬화한다.
+- 계정명·비밀정보·개인 이메일은 `security_policy`의 패턴으로 마스킹한다. 이슈 저장에 실패하면 콘솔에 `failure issue not saved`를 출력하고 원래 실패(exit 1)를 유지한다.
+
 ## 키보드 사용 알림
 
 - 키보드·마우스 입력을 주입하는 단계(CI의 UI e2e, `KEYBOARD_MODULES`) 직전에 모달이 아닌 알림을 한 번 띄운다. 한 실행(run)에서 한 번만 띄우고, 이후 키보드 사용 단계에서는 다시 띄우지 않는다.

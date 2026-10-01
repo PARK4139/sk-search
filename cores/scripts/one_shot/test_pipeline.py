@@ -31,6 +31,7 @@ class PipelineTests(unittest.TestCase):
         self.logs = self.root / "ref/actual/logs/one-shot/run"
         self.root.joinpath("cores").mkdir()
         shutil.copytree(p.HERE, self.root / "cores/scripts/one_shot", ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copy2(p.HERE.parent / "issue_ids.py", self.root / "cores/scripts/issue_ids.py")
         for name in ("one-shot.cmd", "one-shot.ps1", "one_shot.py"):
             shutil.copy2(p.ROOT / name, self.root / name)
         shutil.copytree(p.ROOT / "cores/tests/py", self.root / "cores/tests/py",
@@ -359,6 +360,110 @@ class PipelineTests(unittest.TestCase):
             p.keyboard_alert(self.run)
         self.assertEqual(len(calls), 1)
         self.assertEqual(self.run.state["keyboard_alert"]["method"], "toast")
+
+    # ── failure issue (SSOT, no failure.json) ──
+    def one_shot(self, run_dir, *extra):
+        return subprocess.run([os.environ["COMSPEC"], "/d", "/c", "call", str(self.root / "one-shot.cmd"),
+                               "--config", str(self.config), "--run-dir", str(run_dir), "--bump", "patch", *extra],
+                              cwd=self.folder, env=self.env, capture_output=True, timeout=180)
+
+    def failure_issues(self):
+        return sorted((self.root / "issues/backlog/diagnostics/one-shot-failure").glob("*.md"))
+
+    def test_failure_creates_one_masked_issue_and_updates_on_recurrence(self):
+        # fixture values are assembled at runtime so this source never contains them
+        token = "ghp" + "_" + "a" * 36
+        home = "C:" + "\\" + "Users" + "\\" + "Alice"
+        cfg = p.read_json(self.config)
+        cfg["ci_commands"] = [[sys.executable, "-c", f"import sys; print({home + chr(92) + 'w'!r}, {token!r}); sys.exit(3)"]]
+        p.write_json(self.config, cfg)
+        self.change()
+        first = self.one_shot(self.folder / "run1")
+        self.assertEqual(first.returncode, 1)
+        self.assertIn(b"failure issue created", first.stderr)
+        issues = self.failure_issues()
+        self.assertEqual(len(issues), 1)
+        text = issues[0].read_text(encoding="utf-8")
+        sha = self.git("rev-parse", "HEAD")
+        self.assertIn(f"sha={sha} | stage=ci |", text)
+        self.assertIn("종료 코드 3", text)
+        self.assertNotIn("Alice", text)
+        self.assertNotIn(token, text)
+        self.assertFalse(list(self.folder.rglob("failure.json")))
+        priority = (self.root / "issues/priority.md").read_text(encoding="utf-8")
+        self.assertEqual(priority.count(f"| {issues[0].stem} |"), 1)
+        # same SHA + stage + item: the active issue gets a recurrence entry, no new file or row
+        second = self.one_shot(self.folder / "run2")
+        self.assertEqual(second.returncode, 1)
+        self.assertIn(b"failure issue updated", second.stderr)
+        self.assertEqual(self.failure_issues(), issues)
+        text = issues[0].read_text(encoding="utf-8")
+        self.assertEqual(text.count("- 재발 "), 1)
+        self.assertEqual((self.root / "issues/priority.md").read_text(encoding="utf-8").count(f"| {issues[0].stem} |"), 1)
+
+    def test_failure_before_sha_and_save_failure(self):
+        cfg = p.read_json(self.config)
+        cfg.pop("remote")
+        p.write_json(self.config, cfg)
+        proc = self.one_shot(self.folder / "run-setup")
+        self.assertEqual(proc.returncode, 1)
+        [issue] = self.failure_issues()
+        text = issue.read_text(encoding="utf-8")
+        self.assertIn("sha=미확보 | stage=setup |", text)
+        self.assertIn("미확보 (commit 단계 이전 실패)", text)
+        # issue cannot be saved (backlog family path is a file): original failure and exit code stay
+        shutil.rmtree(self.root / "issues/backlog/diagnostics")
+        (self.root / "issues/backlog/diagnostics").write_text("blocker", encoding="utf-8")
+        cfg["ci_commands"] = [[sys.executable, "-c", "raise SystemExit(4)"]]
+        cfg["remote"] = "origin"
+        p.write_json(self.config, cfg)
+        self.change()
+        proc = self.one_shot(self.folder / "run-unsaved")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn(b"failure issue not saved", proc.stderr)
+        self.assertIn(b"FAIL:", proc.stderr)
+        self.assertFalse(list(self.folder.rglob("failure.json")))
+
+    def test_failure_kind_and_item_normalization(self):
+        sys.path.insert(0, str(p.HERE.parent))
+        import failure_issue as fi
+        self.assertEqual(fi.kind_of("command timed out: cargo; command-0123456789ab", "Failure"), "시간 초과")
+        self.assertEqual(fi.kind_of("command failed: cargo (exit 101); command-0123456789ab", "Failure"), "종료 코드 101")
+        self.assertEqual(fi.kind_of("tool missing", "FileNotFoundError"), "실행 불가")
+        self.assertEqual(fi.kind_of("security result missing or for another SHA", "Failure"), "검증 실패 (Failure)")
+        # run-specific command IDs, SHAs and absolute directories do not split the same failure item
+        a = fi.item_of("command failed: " + "C:" + "\\tools\\cargo.exe (exit 101); command-0123456789ab at " + "a" * 40)
+        b = fi.item_of("command failed: " + "D:" + "\\x\\y\\cargo.exe (exit 101); command-ba9876543210 at " + "b" * 40)
+        self.assertEqual(a, b)
+
+    def test_failure_issue_concurrent_and_closed_not_reopened(self):
+        import threading
+        sys.path.insert(0, str(p.HERE.parent))
+        import failure_issue as fi
+        import issue_ids
+        run_dir = self.folder / "run-direct"
+        run_dir.mkdir()
+        args = dict(stage="ci", sha="b" * 40, sha_reason="", message="command failed: cargo (exit 101); command-0123456789ab",
+                    exc_type="Failure", repro="one-shot.cmd", run_id="r", new_id=issue_ids.get_issue_id,
+                    guard=lambda: p.lock(self.root / "ref/actual/logs/one-shot/.failure-issue.lock", 30))
+        results = []
+        threads = [threading.Thread(target=lambda: results.append(fi.record(self.root, run_dir, **args))) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(sum(created for _, created in results), 1)
+        [issue] = self.failure_issues()
+        self.assertEqual(issue.read_text(encoding="utf-8").count("- 재발 "), 3)
+        # once closed, a recurrence creates a new backlog issue that links the closed one
+        closed = self.root / "issues/closed/diagnostics/one-shot-failure" / issue.name
+        closed.parent.mkdir(parents=True)
+        issue.rename(closed)
+        path, created = fi.record(self.root, run_dir, **args)
+        self.assertTrue(created)
+        self.assertNotEqual(path.name, closed.name)
+        self.assertIn("이전 기록: `issues/closed/diagnostics/one-shot-failure/", path.read_text(encoding="utf-8"))
+        self.assertNotIn("- 재발 ", closed.read_text(encoding="utf-8").split("- 재발 ", 1)[0] + "")
 
 
 if __name__ == "__main__":

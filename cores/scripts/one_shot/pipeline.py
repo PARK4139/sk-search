@@ -183,8 +183,10 @@ class Run:
                 "[sensitive output omitted]\n" if sensitive else data.decode("utf-8", errors="replace"), encoding="utf-8")
         write_json(self.directory / (stem + ".json"), record)
         self.event(event="command_end", **record)
-        if interrupted or (check and proc.returncode):
-            raise Failure(f"command failed or timed out: {args[0]} (exit {proc.returncode}); {stem}")
+        if interrupted:
+            raise Failure(f"command timed out: {args[0]}; {stem}")
+        if check and proc.returncode:
+            raise Failure(f"command failed: {args[0]} (exit {proc.returncode}); {stem}")
         return proc.returncode, out.decode("utf-8", errors="replace").strip()
 
     def git(self, *args, **kwargs):
@@ -625,9 +627,39 @@ def main(stage=None):
         print(f"PASS through {stage or args.stop_after}; push: {pushed}; logs: {directory}")
         return 0
     except (Exception, KeyboardInterrupt) as exc:
-        write_json(directory / "failure.json", {"time": now(), "error": str(exc), "type": type(exc).__name__})
         print(f"FAIL: {exc}; logs: {directory}", file=sys.stderr)
+        # The issue is the failure SSOT (no failure.json). Nested stages only report; the
+        # outermost process records once, so wrapper chains cannot create duplicates.
+        if os.environ.get("SKIM_ONE_SHOT_PARENT") != str(directory):
+            report_failure(directory, stage, args, exc)
         return 1
+
+
+def report_failure(directory, stage, args, exc):
+    """Create/update the one-shot failure issue; a save error keeps the original failure (exit 1)."""
+    try:
+        sys.path.insert(0, str(HERE.parent))
+        import failure_issue
+        import issue_ids
+        state = read_json(directory / "state.json") if (directory / "state.json").exists() else {}
+        stages = state.get("stages", {})
+        failed = next((s for s in STAGES if stages.get(s) in ("failed", "running")), None)
+        name = failed or stage or "setup"
+        sha = state.get("sha")
+        reason = "commit 단계 이전 실패" if not stages.get("commit") or failed == "commit" else "state.json에 SHA 없음"
+        rel = directory.relative_to(ROOT).as_posix() if directory.is_relative_to(ROOT) else directory.name
+        if stage:
+            repro = f"cores\\scripts\\one_shot\\{stage}.cmd --run-dir {rel}"
+        else:
+            repro = "one-shot.cmd" + (f" --bump {args.bump}" if args.bump else "") + \
+                (f" --stop-after {args.stop_after}" if args.stop_after != "push" else "")
+        path, created = failure_issue.record(
+            ROOT, directory, stage=name, sha=sha, sha_reason=reason, message=str(exc),
+            exc_type=type(exc).__name__, repro=repro, run_id=directory.name, new_id=issue_ids.get_issue_id,
+            guard=lambda: lock(ROOT / "ref/actual/logs/one-shot/.failure-issue.lock", 60))
+        print(f"failure issue {'created' if created else 'updated'}: {path.relative_to(ROOT).as_posix()}", file=sys.stderr)
+    except Exception as error:  # noqa: BLE001 - never mask the original failure
+        print(f"failure issue not saved: {error!r}", file=sys.stderr)
 
 
 if __name__ == "__main__":

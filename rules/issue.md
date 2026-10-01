@@ -145,3 +145,4 @@ hostname: TBD
 - expected result에는 해당 일이 없었을 때의 정상 동작을 쓴다.
 - 미해결이면 `결과: 미해결`로 두고 해결용 issue를 `backlog`에 별도로 작성해 서로 경로를 기록한다.
 - 재발 방지책이 규칙이면 이 문서에 반영한다.
+- 예외 — one-shot 실패: pipeline이 `backlog/diagnostics/one-shot-failure/{uuid:8}.md` 하나를 자동 생성하고 `priority.md`에 등록한다. 이 이슈가 실패의 SSOT이며(`failure.json` 없음) 발생 당시 closed 기록을 따로 만들지 않는다. 같은 SHA(이슈 기록·생성 증거만 다른 SHA 포함)·단계·항목의 활성 이슈에는 재발 내역만 추가한다. 해결·재검증 후 같은 파일을 closed로 옮기고 행을 제거한다. closed 이슈는 재개하지 않고 재발 시 새 이슈에서 연결한다 (`one-shot.md#실패-이슈`).
