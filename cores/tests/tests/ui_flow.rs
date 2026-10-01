@@ -238,9 +238,13 @@ fn ui_flow() {
         (
             "wait code args",
             Box::new(|w, c| {
+                // `echo > file` truncates before writing: wait for the full line.
                 let Ok(args) = std::fs::read_to_string(c.bin.join("code-args.txt")) else {
                     return false;
                 };
+                if !args.ends_with('\n') {
+                    return false;
+                }
                 let loc = w.get_preview_loc().to_string();
                 c.note.push(format!("code args={:?}", args.trim()));
                 assert!(args.contains("--goto") && args.trim_end().ends_with(&format!(":{loc}")), "{args} / {loc}");
@@ -258,9 +262,13 @@ fn ui_flow() {
         (
             "wait explorer args",
             Box::new(|w, c| {
+                // `echo > file` truncates before writing: wait for the full line.
                 let Ok(args) = std::fs::read_to_string(c.bin.join("explorer-args.txt")) else {
                     return false;
                 };
+                if !args.ends_with('\n') {
+                    return false;
+                }
                 let rel = w.get_preview_path().to_string().replace('/', "\\");
                 c.note.push(format!("explorer args={:?}", args.trim()));
                 assert!(args.starts_with("/select,\"") && args.contains(&rel), "{args}");
@@ -384,7 +392,21 @@ fn ui_flow() {
             Box::new(|w, c| {
                 let groups: Vec<String> = app::rows_snapshot(w).iter().filter(|r| r.is_group).map(|r| r.path.to_string()).collect();
                 assert!(groups.iter().all(|p| !p.contains('/') || !p.starts_with("docs/")), "paths relative to new root: {groups:?}");
-                assert!(groups.contains(&"login-guide.md".to_string()) && !groups.contains(&"README.md".to_string()), "{groups:?}");
+                // Expected from disk: earlier save steps overwrite whichever file was previewed,
+                // and rg output order (so that file) varies between runs.
+                let docs = c.root.join("docs");
+                let mut expected: Vec<String> = std::fs::read_dir(&docs)
+                    .unwrap()
+                    .filter_map(|e| e.ok().map(|e| e.path()))
+                    .filter(|p| p.extension().is_some_and(|x| x == "md"))
+                    .filter(|p| std::fs::read_to_string(p).is_ok_and(|s| s.contains("TODO")))
+                    .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+                    .collect();
+                expected.sort();
+                let mut got = groups.clone();
+                got.sort();
+                assert_eq!(got, expected, "{groups:?}");
+                assert!(!groups.contains(&"README.md".to_string()), "{groups:?}");
                 c.note.push(format!("rerun groups={groups:?}"));
                 true
             }),

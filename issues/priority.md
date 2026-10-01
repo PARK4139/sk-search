@@ -7,6 +7,5 @@
 | Normal | 9714c20c | 사용자 요청 (2026-10-01): one-shot 키보드 사용 비모달 알림 1회 |
 | Normal | efcb006b | 사용자 요청 (2026-10-01): CD 배포 위치 3rd_party/skim-search/{SHA} |
 | Normal | 38926773 | 사용자 요청 (2026-10-01): failure.json 없이 이슈만 실패 SSOT; 실패 시 backlog에만 작성, 해결 후 동일 파일 closed 이동 |
-| Normal | 4824ad39 | rules/environment.md#검증-스크립트, rules/issue.md#작업-중-생긴-일 |
 | Normal | d9be0edb | 사용자 요청 (2026-10-01): 저장소 구조 정리 (루트 target/scripts/configs, cores/rust·python 언어 관례) |
 | Normal | 196a5f82 | 사용자 요청 (2026-10-01): cores/common/paths.ini 언어 중립 경로 SSOT, Rust·Python 극고속 상수 생성 |
