@@ -1,6 +1,5 @@
 | 우선순위 | UUID | 근거 |
 |---|---|---|
-| High | a3073577 | rules/security.md SEC-LOCALPATH: e2e 캡처 이미지 속 로컬 사용자 경로 공개 (2026-10-02 사후 점검) |
 | Normal | bb7afe0d | 사용자 요청 (2026-10-01): one-shot 파이프라인; rules/one-shot.md |
 | Normal | 1c78710f | rules/environment.md#검증-스크립트 / 발생: diagnostics/python-test-script-migration (사용자 PC 사용 중 실행 보류) |
 | Normal | 38926773 | 사용자 요청 (2026-10-01): failure.json 없이 이슈만 실패 SSOT; 실패 시 backlog에만 작성, 해결 후 동일 파일 closed 이동 |
