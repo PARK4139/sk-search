@@ -10,6 +10,7 @@
 | showreel 프레임 | `ref/showreel/frames/fNN.png` | 1fps 추출본. 추출 명령은 `environment.md#외부-도구` |
 
 - showreel 근거 표기: `showreel 00:SS` (`fNN.png` = showreel 00:(NN-1)초).
+- `ref/closed/`는 근거가 아니다. issue로 이관되어 handover에서 삭제된 원문의 이력이다 (`#handover-이관`).
 - `ref/actual/`은 근거가 아니다. 구현 실측 결과(스크린샷/로그) 저장 위치이며 issue 근거로 인용하지 않는다.
 
 ## 우선순위
@@ -34,7 +35,10 @@ issue로 옮겨진 요구사항은 handover에서 삭제해 근거가 두 곳에
   ```
   - stub에는 UUID 파일명이 아니라 `{function family}/{sub family}`를 쓴다 (상태 이동·파일명 변경에 영향 없음).
 - issue 본문의 `handover §N` 표기는 그대로 둔다. stub이 issue로 연결한다.
-- 원본 보존: 별도 사본을 만들지 않는다. 이관 전 상태를 git에 commit한 뒤, 이관 결과를 별도 commit으로 남긴다. 삭제된 본문은 `git log -p -- ref/handover.md`로 확인한다.
+- 이력: 삭제한 절의 원문을 `ref/closed/handover-YYYY-MM-DD.md`에 절별로 남긴다. 각 절 아래에 `> 이관 대상 issues: …`를 적는다.
+  - `ref/closed/`는 이력이다. 근거로 인용하지 않는다 (근거는 issue).
+  - 삭제한 모든 줄이 이력 파일에 있는지 확인한다.
+- git: 이관 전 상태를 commit한 뒤, 이관 결과(`ref/handover.md`, `ref/closed/`, 로그)를 별도 commit으로 남긴다. 원본 전체는 `git show <이관 전 commit>:ref/handover.md`.
 - 기록: 절별 이관 여부·대상 issue·판단 근거를 `ref/actual/logs/handover-migration.log`에 남기고 이관 commit에 포함한다.
 - 새 issue를 만들어 남은 절의 내용이 모두 반영되면 같은 절차로 추가 이관한다.
 
