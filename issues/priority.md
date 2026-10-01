@@ -2,4 +2,3 @@
 |---|---|---|
 | Normal | d9be0edb | 사용자 요청 (2026-10-01): 저장소 구조 정리 (루트 target/scripts/configs, cores/rust·python 언어 관례) |
 | Normal | 196a5f82 | 사용자 요청 (2026-10-01): cores/common/paths.ini 언어 중립 경로 SSOT, Rust·Python 극고속 상수 생성 |
-| Normal | 6391645d | one-shot 실패 자동 기록: push / run 20261002-022219-acf38dd6 |
