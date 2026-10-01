@@ -35,8 +35,9 @@ CORES = REPO / "cores"
 LOGS = REPO / "ref" / "actual" / "logs"
 SHOTS = REPO / "ref" / "actual" / "screenshot" / "frames"
 APP_LOG = LOGS / "skim-search.log"
-EXE_DEBUG = CORES / "target" / "debug" / "skim-search.exe"
-EXE_RELEASE = CORES / "target" / "release" / "skim-search.exe"
+TARGET = Path(os.environ.get("CARGO_TARGET_DIR") or CORES / "target")  # one-shot builds into its own dir
+EXE_DEBUG = TARGET / "debug" / "skim-search.exe"
+EXE_RELEASE = TARGET / "release" / "skim-search.exe"
 WINDOW_TITLE = "skim-search"
 TEMP = Path(os.environ.get("TEMP", REPO))
 

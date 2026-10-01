@@ -380,8 +380,11 @@ def uv(run):
 def ci(run):
     run.guard()
     assignment = run.state["assignment"]
-    env = dict(os.environ, SKIM_SEARCH_BUILD_SHA=run.state["sha"], SKIM_SEARCH_BUILD_VERSION=assignment["version"])
     cores = run.root / "cores"
+    # Own target dir: a concurrent cargo build in the shared target/ would overwrite the stamped exe.
+    target_dir = cores / "target" / "one-shot"
+    env = dict(os.environ, SKIM_SEARCH_BUILD_SHA=run.state["sha"], SKIM_SEARCH_BUILD_VERSION=assignment["version"],
+               CARGO_TARGET_DIR=str(target_dir))
     commands = run.cfg.get("ci_commands", [["cargo", "build", "--locked"], ["cargo", "build", "--release", "--locked", "-p", "app"],
                                            ["cargo", "test", "--workspace", "--locked"], ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"]])
     if not commands or any(not isinstance(c, list) or not c for c in commands):
@@ -394,7 +397,7 @@ def ci(run):
                 keyboard_alert(run)
             opts = ["--no-build"] if module.startswith("e2e") else []
             run.command([uv(run), "run", "--locked", "--project", cores / "tests/py", "python", "-m", "skim_tests." + module, *opts], env=env)
-    exe = Path(run.cfg.get("artifact", cores / "target/release/skim-search.exe"))
+    exe = Path(run.cfg.get("artifact", target_dir / "release/skim-search.exe"))
     actual = run.command([exe, "--version"])[1]
     expected = f"skim-search {assignment['version']} {run.state['sha']}"
     if actual != expected:
