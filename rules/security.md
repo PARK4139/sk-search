@@ -19,7 +19,7 @@
 | SEC-LOCALPATH | 로컬 사용자 경로·계정명 | `C:\Users\<name>\`, `C:/Users/<name>/`, `/c/Users/<name>/` → 문서에는 `%USERPROFILE%` 사용. Windows 공용 프로필(`Public`, `Default`, `Default User`, `All Users`)은 계정이 아니므로 허용 |
 | SEC-EMAIL | 개인 이메일 | 커밋 메타데이터·추가된 줄의 이메일 중 허용 목록(`*@users.noreply.github.com`, `noreply@github.com`, `noreply@anthropic.com`(Co-Authored-By), 문서·테스트 예약 도메인 `example.*`, `*.invalid`, `*.test`, `*.example`) 외 |
 | SEC-PATH | 공개 금지 경로 | `ref/actual/logs/`, `.venv/`, `target/`, `__pycache__/`, `*.env`, 사용자 설정 파일(`settings.json` 실사용본) |
-| SEC-VULN | 의존성 취약점 | `cores/Cargo.lock`, `cores/tests/py/uv.lock` 에서 설정 심각도 이상 |
+| SEC-VULN | 의존성 취약점 | `cores/rust/Cargo.lock`, `cores/python/uv.lock` 에서 설정 심각도 이상 |
 | SEC-TOOL | 검사 실패 | 검사 미실행, 도구 오류, 시간 초과, 취약점 데이터 미확보 |
 
 - 경고(차단 아님): 5MB 초과 파일, 사용자 작업공간·호스트명 등 개인 식별 가능 문자열.
@@ -30,16 +30,16 @@
 
 | 검사 | 진입점 | 담당 항목 |
 |------|--------|-----------|
-| 저장소 정책 검사 | `cores/scripts/one_shot/security_policy.cmd [--remote origin] [--branch main] [--ref HEAD]` | SEC-SECRET(기본 패턴), SEC-LOCALPATH, SEC-EMAIL, SEC-PATH, SEC-TOOL, WARN-LARGE |
-| 비밀정보·의존성 취약점 | pipeline `security` 단계 (`cores/scripts/one_shot/pipeline.py`) | SEC-SECRET(gitleaks), SEC-VULN(cargo-audit, pip-audit), SEC-TOOL |
+| 저장소 정책 검사 | `scripts\security-policy.cmd [--remote origin] [--branch main] [--ref HEAD]` | SEC-SECRET(기본 패턴), SEC-LOCALPATH, SEC-EMAIL, SEC-PATH, SEC-TOOL, WARN-LARGE |
+| 비밀정보·의존성 취약점 | pipeline `security` 단계 (`cores/python/src/skim_search/diagnostics/one_shot/pipeline.py`) | SEC-SECRET(gitleaks), SEC-VULN(cargo-audit, pip-audit), SEC-TOOL |
 
-- 수동 push 전: `security_policy.cmd` 실행 → 종료 코드 0일 때만 push. 1 = 차단 항목 탐지, 2 = 검사 실행 불가.
-- 자체 테스트: `security_policy.cmd --self-test` (임시 저장소만 사용, 실제 origin에 push하지 않음).
+- 수동 push 전: `scripts\security-policy.cmd` 실행 → 종료 코드 0일 때만 push. 1 = 차단 항목 탐지, 2 = 검사 실행 불가.
+- 자체 테스트: `scripts\security-policy.cmd --self-test` (또는 `cores/python/tests/security/test_policy.py`) (임시 저장소만 사용, 실제 origin에 push하지 않음).
 - one-shot pipeline 의 push 단계는 push 직전에 `security_policy` 를 호출하고 exit 0 일 때만 push한다 (`one-shot.md#단계와-실패-처리`).
 
 ## 예외
 
-- 예외 목록 `cores/scripts/one_shot/security-exceptions.json` 에 ID·rule·대상 경로(glob)·사유·만료일(`expires`, YYYY-MM-DD)을 적는다. 만료된 예외는 무시한다.
+- 예외 목록 `configs/security-exceptions.json` 에 ID·rule·대상 경로(glob)·사유·만료일(`expires`, YYYY-MM-DD)을 적는다. 만료된 예외는 무시한다.
 - 적용된 예외는 검사 결과에 남긴다.
 
 ## 결과와 기록

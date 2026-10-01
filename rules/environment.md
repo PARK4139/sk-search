@@ -10,13 +10,14 @@
 | sk | `CavemanDrive/3rd_party/skim/sk.exe` | 5.6.6 | winget `skim-rs.skim` 복사본. winget 원본은 PATH 등록됨 |
 | ffmpeg | `CavemanDrive/3rd_party/LosslessCut-win-x64/resources/ffmpeg.exe` | — | showreel 프레임 추출 전용 |
 | Rust | stable-x86_64-pc-windows-msvc | cargo 1.98.1 | |
-| uv | `CavemanDrive/3rd_party/pk_system/uv.exe` | 0.12.9 | PATH 미등록. Python 3.13은 uv 관리 (`cores/tests/py/.python-version`) |
+| uv | `CavemanDrive/3rd_party/pk_system/uv.exe` | 0.12.9 | PATH 미등록. Python 3.13은 uv 관리 (`cores/python/pyproject.toml` requires-python) |
 
 - 앱의 rg/sk 탐지 순서: 설정 경로 → PATH → fallback (exe 폴더와 상위 폴더의 `<tool>.exe`, `3rd_party/{ripgrep,skim}/<tool>.exe`). 개발 중에는 fallback으로 `3rd_party`를 찾는다.
 - 버전 기록: `ref/actual/logs/env-tools.log`.
 - showreel 프레임 추출:
   `3rd_party/LosslessCut-win-x64/resources/ffmpeg.exe -i ref/showreel/issue-full-flow.mp4 -vf fps=1 ref/showreel/frames/f%02d.png`
-- 시스템 Python은 쓰지 않는다. 테스트 자동화는 uv 프로젝트 `cores/tests/py/`(Python 3.13, `uv.lock`)에서 `uv run` 으로 실행한다. 의존성 추가는 `uv add` (pyproject.toml + uv.lock 갱신).
+- 시스템 Python은 쓰지 않는다. Python 로직·테스트는 uv 프로젝트 `cores/python/`(Python 3.13, `uv.lock`)에서 `uv run` 으로 실행한다. 의존성 추가는 `uv add` (pyproject.toml + uv.lock 갱신).
+- 빌드 출력은 루트 `target/` (`.cargo/config.toml`). cargo는 `cores/rust/`에서 실행한다.
 
 ## cargo 설정
 
@@ -39,39 +40,40 @@
 
 | 변수 | 용도 | 기본값 |
 |------|------|--------|
-| `SKIM_SEARCH_LOG` | 런타임 로그 경로 override | `ref/actual/logs/skim-search.log` (`cores/common` 기준 상대 경로) |
+| `SKIM_SEARCH_LOG` | 런타임 로그 경로 override | `ref/actual/logs/skim-search.log` (`cores/rust/common` 기준 상대 경로) |
 | `SKIM_SEARCH_SETTINGS` | 설정 파일 경로 override | `%APPDATA%\skim-search\settings.json` |
 
 설정 파일 필드: `rg_path`, `sk_path` (없거나 parse 실패 시 기본값, 사유는 로그에 기록).
 
 ## 검증 스크립트
 
-전체 테스트는 저장소 최상위 `test.cmd` 하나로 실행한다.
+전체 테스트는 `scripts\test.cmd` 하나로 실행한다 (어느 cwd에서도 동작).
 
 ```text
-test.cmd          빌드(debug/release) → cargo test → clippy(-D warnings) → e2e 탐지 → e2e UI → bench rg/sk
-test.cmd quick    빌드 → cargo test → clippy 만
+scripts\test.cmd          빌드(debug/release) → cargo test → clippy(-D warnings) → Python 도구 테스트 → e2e 탐지 → e2e UI → bench rg/sk
+scripts\test.cmd quick    빌드 → cargo test → clippy 만
 ```
 
 - 종료 코드 0 = 전부 통과, 1 = 실패 있음 (실패 단계 이름 출력). 로그는 `ref/actual/logs/`.
 - e2e 단계는 skim-search 창을 띄우고 Ctrl+Shift+F를 보낸다. 실행 중 키보드 입력 금지 (외부 입력이 Query에 섞이면 1회 재시도 후 실패).
 - latency 목표(검색 시작 ≤25ms, 첫 결과 ≤50ms, p50 기준)는 기본 WARN. 실패로 판정하려면 `e2e_ui --strict-latency`.
 
-uv 프로젝트 `cores/tests/py/` (패키지 `skim_tests`, 의존성 `uiautomation`, `Pillow`). 개별 실행:
+uv 프로젝트 `cores/python/` (패키지 `skim_search`, 의존성 `uiautomation`, `Pillow`). 개별 실행은 `cores/python`에서:
 
 ```text
-uv run --project cores/tests/py python -m skim_tests.<module> [옵션]
+uv run --locked python -m <module> [옵션]
+uv run --locked python -m unittest discover -s tests -t . -p "test_*.py"
 ```
 
 | module | 용도 | 로그 |
 |--------|------|------|
-| `capture --exe <exe> --out <png>` | 앱 실행 → 이 프로세스의 `skim-search` 창만 `PrintWindow` 캡처 → WM_CLOSE 종료 → exit code 출력 | — |
-| `e2e_detection [--no-build]` | rg/sk 탐지 case A(설정)/B(PATH)/C(없음) 실행·캡처·판정 | `e2e-detection.log` |
-| `e2e_ui [--no-build] [--latency-runs N] [--strict-latency] [--system-open]` | release exe를 UI Automation으로 조작: 검색, 프리뷰, 저장, Toast, 열기, 단축키, 폴더 선택, 설정 저장·복원, 검색 오류, latency 분포. `CHECK PASS/WARN/FAIL [issue]` 기록 | `e2e-ui.log` |
-| `bench_rg [--runs N]` | rg 단독 실행 시간 (앱 인자 + 옵션 변형) | `bench-rg.log` |
-| `bench_sk [--runs N]` | 미리 실행된 sk의 입력 종료 후 처리 시간 | `bench-sk.log` |
+| `tests.support.capture --exe <exe> --out <png>` | 앱 실행 → 이 프로세스의 `skim-search` 창만 `PrintWindow` 캡처 → WM_CLOSE 종료 → exit code 출력 | — |
+| `tests.e2e.detection [--no-build]` | rg/sk 탐지 case A(설정)/B(PATH)/C(없음) 실행·캡처·판정 | `e2e-detection.log` |
+| `tests.e2e.ui [--no-build] [--latency-runs N] [--strict-latency] [--system-open]` | release exe를 UI Automation으로 조작: 검색, 프리뷰, 저장, Toast, 열기, 단축키, 폴더 선택, 설정 저장·복원, 검색 오류, latency 분포. `CHECK PASS/WARN/FAIL [issue]` 기록. workspace는 `%PUBLIC%\skim-search-e2e` | `e2e-ui.log` |
+| `benchmarks.rg [--runs N]` | rg 단독 실행 시간 (앱 인자 + 옵션 변형) | `bench-rg.log` |
+| `benchmarks.sk [--runs N]` | 미리 실행된 sk의 입력 종료 후 처리 시간 | `bench-sk.log` |
 
-- 공통 모듈 `skim_tests.common`: 경로, UTF-8 로그, Checker(종료 코드), 앱 로그 대기, Win32(ctypes), 자기 프로세스만 닫는 `App`.
+- 공통 모듈 `tests.support.common`: 경로, UTF-8 로그, Checker(종료 코드), 앱 로그 대기, Win32(ctypes), 자기 프로세스만 닫는 `App`.
 
 - 화면의 Text 값(stats, status, 프리뷰 경로)은 UIA로 읽을 수 없다. 앱 로그 `[status_bar] stats=… status=…`, `[preview_editor] show path=… line=… column=…` 로 판정한다.
 
@@ -85,7 +87,7 @@ uv run --project cores/tests/py python -m skim_tests.<module> [옵션]
 - 텍스트 일괄 치환 시 `awk -v`, perl 치환문은 백슬래시 escape를 해석한다. 본문은 파일/stdin으로 넘기고, 치환 후 제어문자(`\x07` 등)를 검사한다 (`closed/process/issue-text-escape-mangled`).
 - latency에 영향을 주는 변경은 release e2e 10회 측정으로 전후를 비교한다 (`closed/search_engine/next-sk-prespawn-slowed-first-result`).
 
-- e2e 전 항상 `cargo build`. `cargo test`는 `target\debug\skim-search.exe`를 갱신하지 않는다 (`closed/diagnostics/e2e-uses-stale-binary/70b8d276`).
+- e2e 전 항상 `cargo build`. `cargo test`는 루트 `target\debug\skim-search.exe`를 갱신하지 않는다 (`closed/diagnostics/e2e-uses-stale-binary/70b8d276`).
 - 화면 캡처는 `PrintWindow`만 사용. `CopyFromScreen`은 겹친 다른 창(사용자 화면)을 캡처한다 (`closed/diagnostics/capture-includes-overlapping-windows/03e79abe`).
 - PowerShell에서 Win32 API에 null 문자열은 `[NullString]::Value` (`$null`은 `""`로 전달됨).
 - PowerShell 5.1에서 로그 읽기는 `Get-Content -Encoding UTF8` (`closed/diagnostics/log-read-mojibake-in-powershell/9dd13927`).

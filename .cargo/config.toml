@@ -1,0 +1,4 @@
+# Build output goes to the repository root target/ (rules/environment.md).
+# cargo finds this file from any directory under the repository, including cores/rust/.
+[build]
+target-dir = "target"

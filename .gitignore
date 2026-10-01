@@ -1,6 +1,4 @@
-cores/target/
-__pycache__/
-*.pyc
-ref/actual/logs/
+/target/
+.venv/
 __pycache__/
 *.pyc

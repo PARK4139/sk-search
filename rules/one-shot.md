@@ -2,20 +2,20 @@
 
 ## 실행 구조
 
-- 사용자 진입점은 저장소 루트의 `one-shot.cmd`이다. `one-shot.cmd` → `one-shot.ps1` → `one_shot.py` 순으로 호출한다.
-- `one_shot.py`는 `commit` → `ci`(빌드·테스트·검사) → `cd`(배포) → `push` 순서로 실행하는 pipeline이다.
-- 각 단계는 독립 실행 가능한 `{stage}.cmd` → `{stage}.ps1` → `{stage}.py` 호출 구조를 제공한다. stage는 `commit`, `ci`, `cd`, `security`, `push`이다.
+- 사용자 진입점은 `scripts\one-shot.cmd`이다. `scripts\one-shot.cmd` → `scripts\one-shot.ps1` → `scripts\one_shot\launch.ps1` → `python -m skim_search.diagnostics.one_shot` 순으로 호출한다.
+- pipeline(`cores/python/src/skim_search/diagnostics/one_shot/pipeline.py`)은 `commit` → `ci`(빌드·테스트·검사) → `cd`(배포) → `security` → `push` 순서로 실행한다.
+- 각 단계는 독립 실행 가능한 `scripts\one_shot\{stage}.cmd` → `{stage}.ps1` → `python -m skim_search.diagnostics.one_shot.{stage}` 호출 구조를 제공한다. stage는 `commit`, `ci`, `cd`, `security`, `push`이다.
 
 ## 사용법
 
 - 준비: Rust(cargo), uv(PATH 또는 `3rd_party/pk_system/uv.exe`), `3rd_party/ripgrep/rg.exe`, `3rd_party/skim/sk.exe`, `3rd_party/security/gitleaks.exe`, `cargo install cargo-audit`. 자동 분류를 쓰면 Codex CLI 설치·로그인.
-- 설정: `cores/scripts/one_shot/config.json` (remote, branch, commit_paths, commit_message, initial_version, initial_base_sha, 도구 경로, 시간 제한). 필수 설정이 없으면 실행 전에 실패한다.
-- 전체 실행: `one-shot.cmd` (에이전트 분류) 또는 `one-shot.cmd --bump patch|minor|major`. 결과: `PASS through push; push: pushed; logs: ref\actual\logs\one-shot\{run}`.
-- push 직전까지: `one-shot.cmd --bump patch --stop-after security`.
-- 단계 독립 실행: `cores\scripts\one_shot\{stage}.cmd --run-dir ref\actual\logs\one-shot\{run}` (앞 단계가 통과한 실행에만 적용).
-- 자체 테스트: `cores\scripts\one_shot` 에서 `uv run --locked --project ..\..\tests\py python -m unittest test_pipeline` (임시 bare 원격만 사용).
+- 설정: `configs/one-shot.json` (remote, branch, commit_paths, commit_message, initial_version, initial_base_sha, 도구 경로, 시간 제한). 필수 설정이 없으면 실행 전에 실패한다.
+- 전체 실행: `scripts\one-shot.cmd` (에이전트 분류) 또는 `scripts\one-shot.cmd --bump patch|minor|major`. 결과: `PASS through push; push: pushed; logs: ref\actual\logs\one-shot\{run}`.
+- push 직전까지: `scripts\one-shot.cmd --bump patch --stop-after security`.
+- 단계 독립 실행: `scripts\one_shot\{stage}.cmd --run-dir ref\actual\logs\one-shot\{run}` (앞 단계가 통과한 실행에만 적용).
+- 자체 테스트: `cores\python` 에서 `uv run --locked python -m unittest tests.one_shot.test_pipeline` (임시 bare 원격만 사용). `scripts\test.cmd`에도 포함.
 - pipeline은 각 단계의 `.cmd` 진입점을 호출해 독립 실행과 같은 경로를 사용한다.
-- 루트의 one-shot 파일 3개는 진입점 예외로 허용한다. 단계 구현은 `cores/scripts/one_shot/`에 둔다. `one-shot.cmd`와 `one-shot.ps1`의 이름은 사용자 지정 예외이며 Python 파일은 snake_case로 한다.
+- 진입점(.cmd/.ps1)은 `scripts/`, 로직은 `cores/python/src/skim_search/diagnostics/one_shot/`에 둔다. `one-shot.cmd`와 `one-shot.ps1`의 이름은 사용자 지정 예외이며 Python 파일은 snake_case로 한다.
 
 ## 언어별 책임
 
@@ -78,7 +78,7 @@
 
 ## 실패 이슈
 
-- 실패하면 비정상 종료하고 `failure.json` 등 별도 실패 산출물을 만들지 않는다. 실패의 SSOT는 `issues/backlog/diagnostics/one-shot-failure/{uuid:8}.md` 하나다 (`issue.md#작업-중-생긴-일` 예외). 구현: `cores/scripts/one_shot/failure_issue.py`.
+- 실패하면 비정상 종료하고 `failure.json` 등 별도 실패 산출물을 만들지 않는다. 실패의 SSOT는 `issues/backlog/diagnostics/one-shot-failure/{uuid:8}.md` 하나다 (`issue.md#작업-중-생긴-일` 예외). 구현: `cores/python/src/skim_search/diagnostics/one_shot/failure_issue.py`.
 - 가장 바깥 프로세스만 기록한다(중첩 단계는 보고만). 중첩 래퍼의 `FAIL:` 줄을 따라 실제 실패 명령을 찾고, 실패 단계·항목, 전체 SHA(미확보면 사유), 실행 ID·시각, 종료 코드/시간 초과/실행 불가, 재현 명령, 마스킹한 오류 요약(마지막 20줄), 증거 로그 경로를 적는다. 원인·조치는 확인 전 `미확인`/`없음`.
 - 키는 `sha | stage | item`. 같은 키(이슈 기록·생성 증거만 다른 SHA 포함)의 backlog/working 이슈가 있으면 `- 재발` 줄만 추가하고 우선순위 행을 늘리지 않는다. 기록은 `ref/actual/logs/one-shot/.failure-issue.lock`으로 직렬화한다.
 - 계정명·비밀정보·개인 이메일은 `security_policy`의 패턴으로 마스킹한다. 이슈 저장에 실패하면 콘솔에 `failure issue not saved`를 출력하고 원래 실패(exit 1)를 유지한다.

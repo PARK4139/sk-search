@@ -1,9 +1,9 @@
 # families — function family 목록
 
-issue 폴더 1단계 이름이자 `cores/app/src/` module 이름이다.
+issue 폴더 1단계 이름이자 `cores/rust/app/src/` module 이름이다.
 표 순서는 같은 우선순위 issue의 착수 순서 기준으로도 쓴다 (`issue.md#상태-전이와-착수`).
 
-| function family | 의미 | 근거 FR / AC | 구현 위치 (`cores/` 기준) |
+| function family | 의미 | 근거 FR / AC | 구현 위치 (`cores/rust/` 기준, Python은 `cores/python/`) |
 |-----------------|------|--------------|---------------------------|
 | view            | 조회기능 (메인 화면, 검색 경로) | FR-100, 101, 103, 104 / AC-100, handover §5, §24 | `app/ui/view.slint`, `app/src/app.rs` |
 | query_syntax    | 쿼리문법 | FR-111~118 / AC-105 | `app/src/query_syntax/` |
@@ -15,8 +15,8 @@ issue 폴더 1단계 이름이자 `cores/app/src/` module 이름이다.
 | toast           | 토스트 | FR-129, 133 / AC-113 | `app/src/toast/`, `app/ui/toast.slint` |
 | status_bar      | 상태표시 | handover §24 status bar, §14 stats | `app/ui/status_bar.slint` |
 | settings        | 설정 | FR-131, handover §20 editor 설정 | `common/src/settings.rs` |
-| diagnostics     | 진단성능 | handover §30 로그, AC-103 측정, handover §29 테스트, 검증 도구 | `common/src/log.rs`, `tests/`, `tests/py/` |
-| build_env       | 빌드·실행 환경 | handover §26 의존성, handover §12 rg/sk 준비, 개발 환경 제약 | `Cargo.toml`, `.cargo/` |
+| diagnostics     | 진단성능 | handover §30 로그, AC-103 측정, handover §29 테스트, 검증 도구 | `common/src/log.rs`, `tests/`, `cores/python/` (`skim_search.diagnostics`, `tests/`, `benchmarks/`) |
+| build_env       | 빌드·실행 환경 | handover §26 의존성, handover §12 rg/sk 준비, 개발 환경 제약 | `Cargo.toml`, 루트 `.cargo/`, `scripts/`, `configs/` |
 | process         | 작업 절차 | `rules/issue.md` 위반·사고 (제품 코드 무관) | (코드 없음) |
 
 ## 규칙
