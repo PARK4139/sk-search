@@ -78,6 +78,7 @@ issues/backlog/… ──착수──▶ issues/working/… ──PASS──▶ 
 - 기본은 한 번에 issue 하나만 `backlog`에서 `working`으로 옮긴다. 코드 변경을 묶는 편이 효율적이면 issue 목록과 사유를 먼저 보고한다.
 - `working`에는 실제 진행 중인 issue만 둔다.
 - 착수 순서는 `issues/priority.md`를 따른다. 같은 등급에서는 선행 의존을 먼저 처리하고, 의존이 없으면 `families.md` 순서를 따른다.
+- 사용자가 특정 issue를 지목했는데 이미 `closed`이면 재개하거나 재작업하지 않는다. `priority.md`에서 그 issue를 건너뛰고, 착수 가능한 다음 `backlog` issue를 선택해 진행한다. 이후 항목도 모두 `closed`이면 다음으로 우선순위가 높은 `backlog` issue를 찾고, 활성 `backlog`가 없을 때만 완료 상태를 보고한다.
 - 수정 대상 파일과 이유를 편집 전에 보고한다.
 
 ## 완료 조건과 보고
