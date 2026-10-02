@@ -5,6 +5,7 @@
   "initial_base_sha": "d158201",
   "remote": "origin",
   "branch": "main",
+  "stages": {"ci": true, "cd": true, "security": true, "push": true},
   "codex": ["codex"],
   "gitleaks": ["gitleaks"],
   "cargo_audit": ["cargo", "audit"],

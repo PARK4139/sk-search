@@ -155,6 +155,59 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaises(p.Failure):
             p.assign_version(self.run, "major")
 
+    # ── stage switches and --urgent-backup (diagnostics/one-shot-urgent-backup/c9758d64) ──
+    def test_urgent_backup_commits_and_pushes_only(self):
+        self.change()
+        proc = self.one_shot(self.folder / "urgent", "--urgent-backup")
+        out = proc.stdout.decode(errors="replace") + proc.stderr.decode(errors="replace")
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertIn("urgent-backup: ci/cd/security skipped", out)
+        state = p.read_json(self.folder / "urgent" / "state.json")
+        self.assertEqual(state["stages"], {"commit": "passed", "ci": "skipped", "cd": "skipped",
+                                           "security": "skipped", "push": "passed"})
+        self.assertEqual(state["plan"], {"mode": "urgent-backup", "enabled": ["commit", "push"]})
+        self.assertEqual(self.git("ls-remote", "origin", "refs/heads/master").split()[0], state["sha"])
+        self.assertNotIn("assignment", state)  # no build, no version
+        self.assertFalse((self.shared / REL["VERSIONS"]).exists())
+        self.assertFalse((self.shared / REL["RELEASES"] / state["sha"]).exists())
+        events = (self.folder / "urgent" / "events.jsonl").read_text(encoding="utf-8")
+        self.assertIn("security_policy.py", events)  # the policy check still ran before the push
+
+    def test_urgent_backup_still_blocked_by_security_policy(self):
+        token = "ghp" + "_" + "b" * 36  # assembled at runtime: this source never contains it
+        (self.root / "leak.txt").write_text(f"token = {token}\n", encoding="utf-8")
+        proc = self.one_shot(self.folder / "urgent-blocked", "--urgent-backup")
+        self.assertEqual(proc.returncode, 1)
+        [issue] = self.failure_issues()  # the failure SSOT records the inner push failure
+        self.assertIn("security_policy blocked the push", issue.read_text(encoding="utf-8"))
+        self.assertNotIn(token, issue.read_text(encoding="utf-8"))
+        self.assertEqual(self.git("ls-remote", "origin", "refs/heads/master").split()[0], self.base)
+
+    def test_stage_switch_validation(self):
+        cfg = p.read_json(self.config)
+        for stages in ({"policy": False}, {"commit": False}, {"ci": "no"}, {"ci": False}, {"cd": False}):
+            p.write_json(self.config, dict(cfg, stages=stages))
+            with self.assertRaises(p.Failure, msg=str(stages)):
+                p.load_config(self.config, self.root)  # unknown/commit/non-bool keys, cd needs ci, security needs cd
+        p.write_json(self.config, dict(cfg, stages={"security": False, "push": False}))
+        loaded = p.load_config(self.config, self.root)
+        self.assertEqual(p.plan(loaded), ["commit", "ci", "cd"])
+        self.assertEqual(p.plan(loaded, urgent=True), ["commit", "push"])
+
+    def test_disabled_stage_is_skipped_and_cannot_run(self):
+        self.change()
+        cfg = p.read_json(self.config)
+        p.write_json(self.config, dict(cfg, stages={"security": False, "push": False}))
+        proc = self.one_shot(self.folder / "partial")
+        self.assertEqual(proc.returncode, 0, proc.stderr.decode(errors="replace"))
+        state = p.read_json(self.folder / "partial" / "state.json")
+        self.assertEqual(state["stages"]["security"], "skipped")
+        self.assertEqual(state["stages"]["push"], "skipped")
+        self.assertEqual(self.git("ls-remote", "origin", "refs/heads/master").split()[0], self.base)
+        run = p.Run(p.load_config(self.config, self.root), self.folder / "partial")
+        with self.assertRaisesRegex(p.Failure, "disabled"):
+            p.execute_stage(run, "security")
+
     # ── version reservations (diagnostics/one-shot-version-on-failure/d6b840a2) ──
     def commit_change(self, text):
         (self.root / "change.txt").write_text(text, encoding="utf-8")

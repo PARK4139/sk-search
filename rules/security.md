@@ -1,6 +1,8 @@
 # security — push 전 보안 위험 검사
 
 모든 push(수동, one-shot pipeline)에 적용한다. 원격 `PARK4139/sk-search`는 **public**이다.
+
+> **필수 (예외 없음)**: 모든 push는 직전에 `security_policy` exit 0 이어야 한다. 비상 백업(`--urgent-backup`)·단계 스위치(`configs/one-shot.json` `stages`)·어떤 인자로도 끌 수 없으며, 끄는 설정·옵션을 만들지 않는다. 비상 모드가 건너뛰는 것은 CI·CD·security 단계(빌드·테스트·gitleaks·의존성 감사)뿐이다 (사용자 결정 2026-10-02, `diagnostics/one-shot-urgent-backup`).
 구현·자동화: `diagnostics/one-shot-security-gate`. pipeline 연결은 `one-shot.md#단계와-실패-처리`.
 
 ## 검사 범위
@@ -35,7 +37,7 @@
 
 - 수동 push 전: `scripts\security-policy.cmd` 실행 → 종료 코드 0일 때만 push. 1 = 차단 항목 탐지, 2 = 검사 실행 불가.
 - 자체 테스트: `scripts\security-policy.cmd --self-test` (또는 `cores/python/tests/security/test_policy.py`) (임시 저장소만 사용, 실제 origin에 push하지 않음).
-- one-shot pipeline 의 push 단계는 push 직전에 `security_policy` 를 호출하고 exit 0 일 때만 push한다 (`one-shot.md#단계와-실패-처리`).
+- one-shot pipeline 의 push 단계는 push 직전에 `security_policy` 를 호출하고 exit 0 일 때만 push한다 (`one-shot.md#단계와-실패-처리`). `--urgent-backup`·`stages` 설정과 무관하게 항상 실행된다.
 
 ## 예외
 

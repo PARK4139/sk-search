@@ -28,6 +28,11 @@ HERE = Path(__file__).resolve().parent
 ROOT = Path(paths.ROOT)
 STAGE_SCRIPTS = Path(paths.SCRIPTS)  # scripts/{stage}.cmd
 STAGES = ("commit", "ci", "cd", "security", "push")
+# configs/one-shot.json "stages" switches; commit always runs. security_policy (inside push) has no
+# switch in any mode (rules/security.md). A stage needs the stage that produces its input.
+TOGGLEABLE = ("ci", "cd", "security", "push")
+REQUIRES = {"cd": "ci", "security": "cd"}
+URGENT_OFF = ("ci", "cd", "security")
 # CI modules that inject keyboard input (rules/one-shot.md#키보드-사용-알림)
 KEYBOARD_MODULES = ("tests.e2e.ui",)
 LEVELS = ("patch", "minor", "major")
@@ -132,7 +137,28 @@ def load_config(path, root=ROOT):
         cfg[name] = float(cfg.get(name, value))
         if cfg[name] <= 0:
             raise Failure(f"invalid timeout: {name}")
+    switches = cfg.get("stages", {})
+    if not isinstance(switches, dict) or any(k not in TOGGLEABLE or not isinstance(v, bool) for k, v in switches.items()):
+        raise Failure(f"stages: only {', '.join(TOGGLEABLE)} with true/false (commit always runs; "
+                      "security_policy cannot be disabled)")
+    cfg["stages"] = {k: switches.get(k, True) for k in TOGGLEABLE}
+    plan(cfg)
     return cfg
+
+
+def plan(cfg, urgent=False):
+    """Enabled stages for this run, in order. --urgent-backup turns ci/cd/security off (commit -> push)."""
+    switches = dict(cfg["stages"])
+    if urgent:
+        switches.update({k: False for k in URGENT_OFF}, push=True)
+    for stage, needs in REQUIRES.items():
+        if switches[stage] and not switches[needs]:
+            raise Failure(f"stages: {stage} requires {needs}")
+    return [s for s in STAGES if s == "commit" or switches[s]]
+
+
+def enabled(run, stage):
+    return stage in run.state.get("plan", {}).get("enabled", STAGES)
 
 
 class Run:
@@ -403,7 +429,10 @@ def commit(run, bump=None):
     run.state["sha"] = run.git("rev-parse", "HEAD")
     run.save()
     run.guard()
-    assign_version(run, bump)
+    if enabled(run, "ci"):  # the version is injected into the build; no build, no version
+        assign_version(run, bump)
+    else:
+        run.event(event="version_not_assigned", reason="ci disabled")
     run.guard()
 
 
@@ -633,21 +662,31 @@ def remote_head(run):
 
 
 def push(run):
-    """Pushes the verified SHA only when every check is bound to it (rules/security.md)."""
+    """Pushes the verified SHA only when every enabled check is bound to it (rules/security.md).
+
+    security_policy always runs here, also for --urgent-backup; there is no switch for it.
+    """
     run.guard()  # HEAD is still the committed SHA, no source changes
     cfg, sha = run.cfg, run.state["sha"]
-    checked = run.state.get("security") or {}
-    if checked.get("sha") != sha:
-        raise Failure("security result missing or for another SHA")
-    manifest = verify_release(run.state["release"], run.state)
-    if manifest["package_sha256"] != checked.get("package_sha256"):
-        raise Failure("package changed after the security check")
+    if enabled(run, "security"):
+        checked = run.state.get("security") or {}
+        if checked.get("sha") != sha:
+            raise Failure("security result missing or for another SHA")
+        manifest = verify_release(run.state["release"], run.state)
+        if manifest["package_sha256"] != checked.get("package_sha256"):
+            raise Failure("package changed after the security check")
+        base = checked.get("remote_base_sha")
+    else:
+        if "release" in run.state:
+            verify_release(run.state["release"], run.state)
+        base = remote_head(run)
+        run.event(event="push_unverified_stages", skipped=[s for s in STAGES if not enabled(run, s)])
     # repository policy check: local paths, personal e-mail, forbidden paths, secret patterns
     code, _ = run.command([sys.executable, HERE.parent / "security_policy.py", "--repo", run.root, "--remote", cfg["remote"],
                            "--branch", cfg["branch"], "--ref", sha], check=False)
     if code != 0:
         raise Failure(f"security_policy blocked the push (exit {code}); see {REL['SECURITY_LOGS']}/")
-    if remote_head(run) != checked.get("remote_base_sha"):
+    if remote_head(run) != base:
         raise Failure("remote branch changed after the security check")
     run.git("push", cfg["remote"], f"{sha}:refs/heads/{cfg['branch']}")  # fast-forward only, never forced
     if remote_head(run) != sha:
@@ -655,12 +694,15 @@ def push(run):
     run.state["push"] = {"remote": cfg["remote"], "branch": cfg["branch"], "sha": sha, "time": now(), "result": "pushed"}
     run.event(event="pushed", remote=cfg["remote"], branch=cfg["branch"], sha=sha)
     run.save()
-    release_version(run)
+    if "assignment" in run.state:
+        release_version(run)
 
 
 def execute_stage(run, stage, bump=None):
+    if not enabled(run, stage):
+        raise Failure(f"stage {stage} is disabled for this run")
     previous = STAGES[:STAGES.index(stage)]
-    if any(run.state["stages"].get(s) != "passed" for s in previous):
+    if any(run.state["stages"].get(s) != ("passed" if enabled(run, s) else "skipped") for s in previous):
         raise Failure("previous stages not passed")
     run.state["stages"][stage] = "running"
     for later in STAGES[STAGES.index(stage) + 1:]:
@@ -687,6 +729,8 @@ def main(stage=None):
     parser.add_argument("--run-dir", type=Path, help="use an existing run for an independent stage")
     parser.add_argument("--bump", choices=LEVELS, help="explicit classification; skip agent")
     parser.add_argument("--stop-after", choices=STAGES, default="push")
+    parser.add_argument("--urgent-backup", action="store_true",
+                        help="emergency backup: commit -> push only (no CI/CD/security stage); security_policy still runs")
     args = parser.parse_args()
     directory = (args.run_dir or Path(paths.ONE_SHOT_LOGS) / (datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8])).resolve()
     directory.mkdir(parents=True, exist_ok=True)
@@ -695,6 +739,13 @@ def main(stage=None):
         run = Run(cfg, directory)
         if stage and stage != "commit" and (not args.run_dir or args.bump):
             raise Failure("independent stage requires --run-dir; --bump only applies to commit")
+        if stage and args.urgent_backup:
+            raise Failure("--urgent-backup applies to the full pipeline only")
+        if "plan" not in run.state:
+            mode = "urgent-backup" if args.urgent_backup else "normal"
+            run.state["plan"] = {"mode": mode, "enabled": plan(cfg, args.urgent_backup)}
+            run.save()
+            run.event(event="plan", **run.state["plan"])
         nested = os.environ.get("SKIM_ONE_SHOT_PARENT") == str(directory)
         if stage and nested:
             execute_stage(run, stage, args.bump)
@@ -706,6 +757,11 @@ def main(stage=None):
                     # children inherit the owner PID: a version reservation lives as long as this process
                     env = dict(os.environ, SKIM_ONE_SHOT_PARENT=str(directory), SKIM_ONE_SHOT_PID=str(owner_pid()))
                     for name in STAGES[:STAGES.index(args.stop_after) + 1]:
+                        if not enabled(run, name):
+                            run.state["stages"][name] = "skipped"
+                            run.save()
+                            run.event(event="stage_skipped", stage=name)
+                            continue
                         command = [STAGE_SCRIPTS / (name + ".cmd"),
                                    "--config", args.config.resolve(), "--run-dir", directory]
                         if name == "commit" and args.bump:
@@ -713,6 +769,9 @@ def main(stage=None):
                         run.command(command, env=env)
                         run.state = read_json(run.state_path)
         pushed = (run.state.get("push") or {}).get("result", "not run")
+        skipped = [s for s in STAGES if not enabled(run, s)]
+        if skipped:
+            pushed += f" ({run.state['plan']['mode']}: {'/'.join(skipped)} skipped)"
         run.event(event="complete", stage=stage or args.stop_after, push=pushed)
         print(f"PASS through {stage or args.stop_after}; push: {pushed}; logs: {directory}")
         return 0

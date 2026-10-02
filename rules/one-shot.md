@@ -12,6 +12,7 @@
 - 설정: `configs/one-shot.json` (remote, branch, commit_paths, commit_message, initial_version, initial_base_sha, 도구 경로, 시간 제한). 필수 설정이 없으면 실행 전에 실패한다.
 - 전체 실행: `scripts\one-shot.cmd` (에이전트 분류) 또는 `scripts\one-shot.cmd --bump patch|minor|major`. 결과: `PASS through push; push: pushed; logs: ref\actual\logs\one-shot\{run}`.
 - push 직전까지: `scripts\one-shot.cmd --bump patch --stop-after security`.
+- 비상 백업: `scripts\one-shot.cmd --urgent-backup` → commit(add 포함) → push만. 결과: `push: pushed (urgent-backup: ci/cd/security skipped)`.
 - 단계 독립 실행: `scripts\{stage}.cmd --run-dir ref\actual\logs\one-shot\{run}` (앞 단계가 통과한 실행에만 적용).
 - 자체 테스트: `cores\python` 에서 `uv run --locked python -m unittest tests.one_shot.test_pipeline` (임시 bare 원격만 사용). `scripts\test.cmd`에도 포함.
 - pipeline은 각 단계의 `.cmd` 진입점을 호출해 독립 실행과 같은 경로를 사용한다.
@@ -34,6 +35,13 @@
 - security: CD 산출물과 push 대상 커밋 범위를 검사한다 (`security.md`).
 - push: security가 통과한 뒤 같은 검증 커밋을 설정된 원격·브랜치로 push한다 (fast-forward만, force 금지). push 직전에 다음을 모두 확인하고 하나라도 어긋나면 push하지 않는다: HEAD·소스 불변(guard), security 결과의 SHA 일치, 패키지 체크섬 일치, `security_policy` 통과(exit 0), 원격 브랜치가 security 검사 시점과 동일. push 후 원격 HEAD가 해당 SHA인지 확인한다.
 - `--stop-after security` 로 push 직전까지만 실행할 수 있다. 기본은 push까지 실행한다.
+
+## 단계 스위치와 비상 백업
+
+- `configs/one-shot.json`의 `"stages": {"ci", "cd", "security", "push"}` (true/false, 기본 true)로 단계를 끈다. commit은 항상 실행한다. 다른 키(`commit`, `policy` 등)·비불리언·의존 위반(cd는 ci, security는 cd 필요)은 실행 전 실패.
+- 꺼진 단계는 `state.json`에 `skipped`, 이벤트 `stage_skipped`로 기록한다. 실행 계획은 `state.json`의 `plan`(`mode`, `enabled`)에 남고 단계 자식 프로세스도 이를 따른다. 꺼진 단계를 단독 실행하면 실패한다.
+- `--urgent-backup`(비상 백업): 설정과 무관하게 ci·cd·security를 끄고 commit → push만 실행한다. 빌드가 없으므로 버전을 배정하지 않고 패키지도 게시하지 않는다. push 직전 `security_policy`(필수, `security.md` 상단), fast-forward만, push 후 원격 HEAD 확인은 그대로다. 콘솔·상태에 건너뛴 단계를 표시한다.
+- 비상 백업은 예외 수단이다. 코드 변경은 이후 일반 실행으로 다시 검증한다.
 - CI 실패 시 CD와 push를 실행하지 않는다. CD 실패 시 push를 실행하지 않는다. 모든 단계 실패는 pipeline의 0이 아닌 종료 코드로 전파한다.
 - CI 이후 소스 또는 HEAD가 달라지면 해당 실행의 CD/push를 중단한다. 생성 로그와 산출물은 소스 변경 판정에서 구분한다.
 - 실행 전에 commit 범위, CI 명령, 배포 대상·방법·확인 절차, push 원격·브랜치를 확인한다. 필수 설정이 없으면 실행 오류로 처리하며 단계를 성공 또는 배포 완료로 간주하지 않는다.
