@@ -1,22 +1,22 @@
 # title
-! exclude 조건 미동작
+! exclude condition does not work
 
 # pre-condition
-- skim-search.exe 실행
-- 공통 테스트 workspace (rules/issue.md#공통-테스트-workspace)
+- skim-search.exe running
+- Common test workspace (rules/issue.md#common-test-workspace)
 
 # steps
-근거: FR-113, AC-105, handover §7, §8 / showreel 00:07~00:08
-1. Query `login !test` 입력 (Enter 없이)
+Source: FR-113, AC-105, handover §7, §8 / showreel 00:07~00:08
+1. Type query `login !test` (no Enter)
 
 # actual result
-- PASS (실제 rg + sk): login !test 및 단독 !login → login 미포함 줄만 (`cores/tests/tests/search_engine_pipeline.rs` ac105_syntax_cases).
-- 로그: `[search_engine] generation=N raw=... skim=... scope=... rg_pattern=... rg_globs=...`, `[test] pipeline query=...`
-- 자동 테스트: `ref/actual/logs/cargo-test.log` (32 passed), clippy 0 (`ref/actual/logs/cargo-clippy.log`)
+- PASS (real rg + sk): login !test, and `!login` alone → only lines without login (`cores/tests/tests/search_engine_pipeline.rs` ac105_syntax_cases).
+- Log: `[search_engine] generation=N raw=... skim=... scope=... rg_pattern=... rg_globs=...`, `[test] pipeline query=...`
+- Automated tests: `ref/actual/logs/cargo-test.log` (32 passed), clippy 0 (`ref/actual/logs/cargo-clippy.log`)
 
 # expected result
-- `login` 포함 줄 중 `test` 포함 줄 제외. 단독 `!login`은 `login` 미포함 줄만 표시
-- 검증 증거: `ref/actual/logs/skim-search.log`의 parsed skim query / scope filters / result count
+- Lines containing `login` but containing `test` are excluded. `!login` alone shows only lines without `login`
+- Evidence: parsed skim query / scope filters / result count in `ref/actual/logs/skim-search.log`
 
 # label
 SQA_sk_0_0_0
@@ -25,4 +25,4 @@ SQA_sk_0_0_0
 OS: windows 10 pro
 hostname: TBD
 
-# 담당자
+# assignee

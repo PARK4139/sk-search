@@ -1,40 +1,43 @@
-# implementation — 코드 구조 (`cores/`)
+# implementation — code structure (`cores/`)
 
-## 위치
+## Locations
 
-저장소 루트 (`build_env/repo-layout/d9be0edb`):
+Repository root (`build_env/repo-layout/d9be0edb`):
 
 ```text
-.cargo/config.toml   ← [build] target-dir = "target" (cargo가 정한 위치라 루트)
-configs/             ← 프로젝트가 읽는 설정: one-shot.json, security-exceptions.json
-scripts/             ← 실행 진입점만 (.cmd → .ps1 → Python 모듈). 로직 없음, 하위 폴더 없음
-cores/rust/          ← Cargo workspace (Rust 관례)
-cores/python/        ← uv 프로젝트 (Python 관례, src layout, 패키지 skim_search)
-cores/common/        ← 언어 중립 SSOT (build_env/paths-ssot)
-target/              ← cargo 출력 (git 제외). one-shot 격리 빌드는 target/one-shot/
+.cargo/config.toml   ← [build] target-dir = "target" (cargo fixes this location, so it is at the root)
+configs/             ← settings read by the project: one-shot.json, security-exceptions.json
+scripts/             ← entry points only (.cmd → .ps1 → Python module). No logic, no subfolders
+cores/rust/          ← Cargo workspace (Rust conventions)
+cores/python/        ← uv project (Python conventions, src layout, package skim_search)
+cores/common/        ← language-neutral SSOT (build_env/paths-ssot)
+target/              ← cargo output (not committed). one-shot isolated build: target/one-shot/
 ```
 
-- 구현 코드는 모두 `cores/` 아래에 둔다. `issues/`, `ref/`, `rules/`, `scripts/`, `configs/`에 로직을 두지 않는다. 루트에는 실행 파일을 두지 않는다.
-- 진입점 위치·언어별 책임은 `one-shot.md#실행-구조`, `one-shot.md#언어별-책임`을 따른다.
-- 테스트는 각 언어 프로젝트 안에 둔다: Rust `cores/rust/tests/`, Python `cores/python/tests/`(벤치마크는 `cores/python/benchmarks/`).
-- `cores/rust/` = Cargo workspace. member는 `common`(lib), `app`(lib+bin), `tests`(통합 테스트) 3개.
-- 기능 코드는 `cores/rust/app/src/` 안에서 function family 이름과 같은 module로 tree 구조화한다 (위치표: `families.md`).
-- 2개 이상 function family가 사용하는 Rust 공통 기능은 `cores/rust/common/`에 둔다.
-- 모든 폴더/파일/module 이름은 영어(ASCII, snake_case).
+- All implementation code lives under `cores/`. No logic in `issues/`, `ref/`, `rules/`, `scripts/`, `configs/`. No executables at the root.
+- Entry point locations and language responsibilities follow `one-shot.md#execution-structure` and `one-shot.md#language-responsibilities`.
+- Tests live inside each language project: Rust `cores/rust/tests/`, Python `cores/python/tests/` (benchmarks in `cores/python/benchmarks/`).
+- `cores/rust/` = Cargo workspace with three members: `common` (lib), `app` (lib+bin), `tests` (integration tests).
+- Feature code is a module tree inside `cores/rust/app/src/` named after the function family (locations: `families.md`).
+- Rust code used by two or more function families goes to `cores/rust/common/`.
+- All folder / file / module names are English (ASCII, snake_case).
+- Code comments, docstrings and generated text (logs, issues) are English. Product UI strings follow handover.
 
-## 목표 tree (Rust)
+## Target tree (Rust)
 
 ```text
 cores/rust/
 ├─ Cargo.toml                  ← [workspace] members = ["common", "app", "tests"]
-├─ common/                     ← 공통 lib crate
+├─ common/                     ← shared lib crate
 │  ├─ Cargo.toml
+│  ├─ build.rs                 ← paths.ini → common::paths constants
 │  └─ src/
 │     ├─ lib.rs
-│     ├─ log.rs                ← 런타임 증거 로그 (environment.md#증거-경로)
-│     ├─ settings.rs           ← 설정 load/save
-│     ├─ process.rs            ← 외부 프로세스 spawn/kill
-│     └─ path.rs               ← Windows 경로 처리
+│     ├─ log.rs                ← runtime evidence log (environment.md#evidence-paths)
+│     ├─ paths.rs              ← path SSOT constants and root discovery
+│     ├─ settings.rs           ← settings load/save
+│     ├─ process.rs            ← external process spawn/kill
+│     └─ path.rs               ← Windows path handling
 ├─ app/                        ← lib + bin crate: skim-search.exe
 │  ├─ Cargo.toml
 │  ├─ build.rs
@@ -46,19 +49,19 @@ cores/rust/
 │  │  ├─ status_bar.slint
 │  │  └─ toast.slint
 │  └─ src/
-│     ├─ main.rs               ← bin entry (얇게 유지)
-│     ├─ lib.rs                ← module 공개 (tests crate에서 사용)
-│     ├─ app.rs                ← UI model ↔ module 연결
-│     ├─ query_syntax/         ← 쿼리 parser
+│     ├─ main.rs               ← bin entry (keep thin)
+│     ├─ lib.rs                ← exposes modules (used by the tests crate)
+│     ├─ app.rs                ← UI model ↔ modules
+│     ├─ query_syntax/         ← query parser
 │     ├─ search_engine/        ← rg, sk, generation, cancel, streaming
-│     ├─ result_panel/         ← 결과 grouping model
+│     ├─ result_panel/         ← result grouping model
 │     ├─ preview_editor/       ← load/save/conflict
-│     ├─ external_open/        ← editor 실행, explorer /select
+│     ├─ external_open/        ← editor launch, explorer /select
 │     ├─ shortcut/             ← global hotkey
 │     └─ toast/                ← toast stack model
-└─ tests/                      ← 통합 테스트 crate (diagnostics, handover §29)
-   ├─ Cargo.toml               ← dev-dependency: common, app
-   ├─ fixtures/sample/tree/    ← 골든 샘플 트리 (issue.md 공통 테스트 workspace)
+└─ tests/                      ← integration test crate (diagnostics, handover §29)
+   ├─ Cargo.toml               ← depends on common, app
+   ├─ fixtures/sample/tree/    ← golden sample tree (issue.md common test workspace)
    └─ tests/{function family}_*.rs
 ```
 
@@ -66,50 +69,52 @@ cores/rust/
 
 ```text
 cores/python/
-├─ pyproject.toml, uv.lock     ← 프로젝트 skim-search (uv_build, src layout)
+├─ pyproject.toml, uv.lock     ← project skim-search (uv_build, src layout)
 ├─ src/skim_search/
+│  ├─ __init__.py              ← generated path constants (gen_paths)
+│  ├─ gen_paths.py
 │  └─ diagnostics/
-│     ├─ one_shot/             ← pipeline, 단계 모듈, failure_issue (python -m skim_search.diagnostics.one_shot)
+│     ├─ one_shot/             ← pipeline, stage modules, failure_issue (python -m skim_search.diagnostics.one_shot)
 │     ├─ security_policy.py
 │     └─ issue_ids.py
-├─ tests/                      ← test_*.py (unittest), e2e 스크립트, 공용 헬퍼
-│  ├─ support/                 ← common, capture, paths(테스트 경로 SSOT)
+├─ tests/                      ← test_*.py (unittest), e2e scripts, shared helpers
+│  ├─ support/                 ← common, capture
 │  ├─ e2e/                     ← detection, ui
-│  ├─ one_shot/ security/ issue_ids/
-└─ benchmarks/                 ← rg, sk
+│  ├─ one_shot/ security/ issue_ids/ paths/
+└─ benchmarks/                 ← rg, sk, paths
 ```
 
-## 구조 규칙
+## Structure rules
 
-- 위 tree는 목표 형태다. 파일/module은 해당 issue 착수 시 필요한 것만 만든다. 빈 module 선생성 금지.
-- `common/`에는 실제로 2개 이상 function family에서 쓰는 코드만 둔다. 미래 사용을 가정한 선제 공통화 금지.
-- 의존 방향: `tests` → `app` → `common`. 역방향 참조 금지. `app` 내부 module 간 순환 의존 금지.
-- 저장소·3rd_party 구조 경로는 `cores/common/paths.ini` 한 곳에서만 정의한다 (`build_env/paths-ssot`). 코드에 구조 경로 문자열이나 `parents[N]` 계산을 쓰지 않는다.
-  - Rust: `common::paths` (`common/build.rs`가 `const &str` 생성). 루트는 실행 중 `paths::repo_root(start)`/`paths::third_party(start)`로 찾고 `paths::join`으로 조합한다. `env!("CARGO_MANIFEST_DIR")`로 만든 절대경로를 앱 코드에 넣지 않는다(테스트의 탐색 시작점으로만 허용).
-  - Python: `from skim_search import KEY` 또는 `skim_search.REL["KEY"]`(상대값). 생성: `python -m skim_search.gen_paths` (`--check`는 test.cmd·one-shot CI 첫 단계). 생성 영역은 문자열 상수만 두고 import하지 않는다(측정: `benchmarks.paths`, 50µs 이하).
-  - 키를 추가하면 `paths.ini`를 고치고 생성기를 실행한다. 200개를 넘으면 경고 → 열거 대신 규칙으로 만들 구조를 검토한다.
-- handover §25의 금지 계층(`manager/`, `repository/`, `service/`, `adapter/`, `domain/`)은 만들지 않는다.
-- 새 function family 추가 시 `families.md` 표를 먼저 갱신한다.
-- handover §25 권장 구조(단일 crate)와 다르다. 사용자 지시(`cores/` tree, 언어별 분리)가 우선한다.
+- The trees above are the target shape. Create only the files/modules an issue needs when it starts. No empty modules in advance.
+- `common/` holds only code actually used by two or more function families. No speculative sharing.
+- Dependency direction: `tests` → `app` → `common`. No reverse references. No cycles between `app` modules.
+- Repository and 3rd_party structure paths are defined only in `cores/common/paths.ini` (`build_env/paths-ssot`). No structure path strings or `parents[N]` arithmetic in code.
+  - Rust: `common::paths` (`common/build.rs` generates `const &str`). Roots are found at runtime with `paths::repo_root(start)` / `paths::third_party(start)` and joined with `paths::join`. No absolute path built from `env!("CARGO_MANIFEST_DIR")` in app code (allowed only as a search start in tests).
+  - Python: `from skim_search import KEY` or `skim_search.REL["KEY"]` (relative). Generate with `python -m skim_search.gen_paths` (`--check` runs in test.cmd and as the first one-shot CI step). The generated region holds string constants only, no imports (measured by `benchmarks.paths`, at most 50 µs).
+  - To add a key, edit `paths.ini` and run the generator. Above 200 keys a warning asks to derive paths by rule instead of listing them.
+- Do not create the layers prohibited by handover §25 (`manager/`, `repository/`, `service/`, `adapter/`, `domain/`).
+- Update the `families.md` table first when adding a function family.
+- This differs from the structure recommended in handover §25 (single crate). The user instruction (`cores/` tree, per-language split) takes precedence.
 
 ## UI
 
-- Dark theme: `app/build.rs`에서 style `fluent-dark` (handover §24).
-- 기본 폰트 `Segoe UI`. `Malgun Gothic`은 `\`를 `₩`로 표시해 Windows 경로가 깨진다 (`closed/view/backslash-rendered-as-won/8db8c717`).
-- 필수 UI 요소에는 `accessible-label`을 붙인다 (테스트에서 사용).
-- 외부 프로세스 spawn 시 `CREATE_NO_WINDOW` 사용 (release GUI에서 console 창 깜빡임 방지).
+- Dark theme: style `fluent-dark` in `app/build.rs` (handover §24).
+- Default font `Segoe UI`. `Malgun Gothic` renders `\` as `₩` and breaks Windows paths (`closed/view/backslash-rendered-as-won/8db8c717`).
+- Required UI elements carry an `accessible-label` (used by tests).
+- Spawn external processes with `CREATE_NO_WINDOW` (prevents console flashes in the release GUI).
 
-## 테스트
+## Tests
 
-- 공개 API 검증·handover §29 시나리오는 `cores/rust/tests/`. private 함수 단위 테스트만 해당 파일 내 `#[cfg(test)]` 허용.
-- 테스트 파일 첫 줄에 대상 issue를 적는다. (예: `//! issue: view/main-ui-components-missing/521ce549`)
-- UI 테스트는 `i-slint-backend-testing` + `accessible-label`로 요소를 찾는다. `app/build.rs`의 `with_debug_info(true)` 필수.
-- 실행 결과는 `ref/actual/logs/`에 저장한다:
+- Public API checks and handover §29 scenarios go to `cores/rust/tests/`. Only private-function unit tests may use `#[cfg(test)]` in the source file.
+- The first line of a test file names its issue (e.g. `//! issue: view/main-ui-components-missing/521ce549`).
+- UI tests find elements with `i-slint-backend-testing` + `accessible-label`. `with_debug_info(true)` in `app/build.rs` is required.
+- Save results in `ref/actual/logs/`:
   - `cargo test 2>&1 | tee ref/actual/logs/cargo-test.log`
   - `cargo clippy --all-targets 2>&1 | tee ref/actual/logs/cargo-clippy.log`
 
-## 로그
+## Logs
 
-- 런타임 증거는 `common::log::write(event, detail)`로 남긴다 (AGENTS.md 9). event는 function family 이름 또는 `app`/`test`.
-- 로그 실패가 앱 동작에 영향을 주면 안 된다.
-- 경로와 override는 `environment.md#환경변수`.
+- Runtime evidence is written with `common::log::write(event, detail)` (AGENTS.md 9). event is a function family name or `app`/`test`.
+- Log failures must not affect app behavior.
+- Path and override: `environment.md#environment-variables`.

@@ -1,100 +1,99 @@
-# one-shot — 로컬 파이프라인 규칙
+# one-shot — local pipeline rules
 
-## 실행 구조
+## Execution structure
 
-- 사용자 진입점은 `scripts\one-shot.cmd`이다. `scripts\one-shot.cmd` → `scripts\one-shot.ps1` → `scripts\launch.ps1` → `python -m skim_search.diagnostics.one_shot` 순으로 호출한다.
-- pipeline(`cores/python/src/skim_search/diagnostics/one_shot/pipeline.py`)은 `commit` → `ci`(빌드·테스트·검사) → `cd`(배포) → `security` → `push` 순서로 실행한다.
-- 각 단계는 독립 실행 가능한 `scripts\{stage}.cmd` → `{stage}.ps1` → `python -m skim_search.diagnostics.one_shot.{stage}` 호출 구조를 제공한다. stage는 `commit`, `ci`, `cd`, `security`, `push`이다.
+- The user entry point is `scripts\one-shot.cmd`. Call chain: `scripts\one-shot.cmd` → `scripts\one-shot.ps1` → `scripts\launch.ps1` → `python -m skim_search.diagnostics.one_shot`.
+- The pipeline (`cores/python/src/skim_search/diagnostics/one_shot/pipeline.py`) runs `commit` → `ci` (build, test, checks) → `cd` (deploy) → `security` → `push`.
+- Each stage is independently runnable via `scripts\{stage}.cmd` → `{stage}.ps1` → `python -m skim_search.diagnostics.one_shot.{stage}`. Stages: `commit`, `ci`, `cd`, `security`, `push`.
 
-## 사용법
+## Usage
 
-- 준비: Rust(cargo), uv(PATH 또는 `3rd_party/pk_system/uv.exe`), `3rd_party/ripgrep/rg.exe`, `3rd_party/skim/sk.exe`, `3rd_party/security/gitleaks.exe`, `cargo install cargo-audit`. 자동 분류를 쓰면 Codex CLI 설치·로그인.
-- 설정: `configs/one-shot.json` (remote, branch, commit_paths, commit_message, initial_version, initial_base_sha, 도구 경로, 시간 제한). 필수 설정이 없으면 실행 전에 실패한다.
-- 전체 실행: `scripts\one-shot.cmd` (에이전트 분류) 또는 `scripts\one-shot.cmd --bump patch|minor|major`. 결과: `PASS through push; push: pushed; logs: ref\actual\logs\one-shot\{run}`.
-- push 직전까지: `scripts\one-shot.cmd --bump patch --stop-after security`.
-- 비상 백업: `scripts\one-shot.cmd --urgent-backup` → commit(add 포함) → push만. 결과: `push: pushed (urgent-backup: ci/cd/security skipped)`.
-- 단계 독립 실행: `scripts\{stage}.cmd --run-dir ref\actual\logs\one-shot\{run}` (앞 단계가 통과한 실행에만 적용).
-- 자체 테스트: `cores\python` 에서 `uv run --locked python -m unittest tests.one_shot.test_pipeline` (임시 bare 원격만 사용). `scripts\test.cmd`에도 포함.
-- pipeline은 각 단계의 `.cmd` 진입점을 호출해 독립 실행과 같은 경로를 사용한다.
-- 진입점(.cmd/.ps1)은 `scripts/` 한 단계에 모두 둔다(하위 폴더 없음: `one-shot`, `{stage}`, `launch.ps1`, `test`, `security-policy`, `issue-id`). 로직은 `cores/python/src/skim_search/diagnostics/one_shot/`에 둔다. `one-shot.cmd`와 `one-shot.ps1`의 이름은 사용자 지정 예외이며 Python 파일은 snake_case로 한다.
+- Prerequisites: Rust (cargo), uv (PATH or `3rd_party/pk_system/uv.exe`), `3rd_party/ripgrep/rg.exe`, `3rd_party/skim/sk.exe`, `3rd_party/security/gitleaks.exe`, `cargo install cargo-audit`. For automatic classification, install and log in to the Codex CLI.
+- Settings: `configs/one-shot.json` (remote, branch, commit_paths, commit_message, initial_version, initial_base_sha, stages, tool paths, timeouts). Missing required settings fail before the run.
+- Full run: `scripts\one-shot.cmd` (agent classification) or `scripts\one-shot.cmd --bump patch|minor|major`. Output: `PASS through push; push: pushed; logs: ref\actual\logs\one-shot\{run}`.
+- Up to just before push: `scripts\one-shot.cmd --bump patch --stop-after security`.
+- Emergency backup: `scripts\one-shot.cmd --urgent-backup` → commit (including add) → push only. Output: `push: pushed (urgent-backup: ci/cd/security skipped)`.
+- Independent stage: `scripts\{stage}.cmd --run-dir ref\actual\logs\one-shot\{run}` (only for a run whose previous stages passed).
+- Self test: in `cores\python`, `uv run --locked python -m unittest tests.one_shot.test_pipeline` (temporary bare remotes only). Also part of `scripts\test.cmd`.
+- The pipeline calls each stage's `.cmd` entry point, so it uses the same path as an independent run.
+- Entry points (.cmd/.ps1) all live directly in `scripts/` (no subfolders: `one-shot`, `{stage}`, `launch.ps1`, `test`, `security-policy`, `issue-id`). Logic lives in `cores/python/src/skim_search/diagnostics/one_shot/`. The names `one-shot.cmd` and `one-shot.ps1` are a user-specified exception; Python files are snake_case.
 
-## 언어별 책임
+## Language responsibilities
 
-- `.cmd`는 가장 얇게 유지한다. 같은 단계의 `.ps1` 호출, 인자 전달, 종료 코드 반환만 맡는다.
-- `.ps1`은 얇게 유지한다. Python 실행 환경 연결, 인자 전달, 종료 코드 반환만 맡는다.
-- `.py`는 단계 조합, 설정 처리, 프로세스 관리, 오류 처리, 검증 및 로그 등 복잡한 로직을 맡는다.
-- `.rs`는 극초고속 처리가 필요한 부분에 사용한다. 필요성은 실측으로 판단하며 파이프라인 조합은 Python이 맡는다.
-- 호출 계층마다 인자와 종료 코드를 보존한다. 작업 디렉터리와 공백이 있는 경로에 의존하지 않도록 저장소 경로를 진입점 기준으로 구한다.
+- `.cmd` is as thin as possible: call the `.ps1` of the same stage, pass arguments, return the exit code.
+- `.ps1` is thin: connect the Python environment, pass arguments, return the exit code.
+- `.py` holds the complex logic: stage composition, settings, process management, error handling, verification, logging.
+- `.rs` is for parts that need extreme speed. Decide by measurement; Python composes the pipeline.
+- Each call layer preserves arguments and exit codes. Compute the repository path from the entry point so nothing depends on the working directory or paths with spaces.
 
-## 단계와 실패 처리
+## Stages and failure handling
 
-- commit: 설정된 변경 범위로 커밋하고 SHA를 기록한다. 커밋할 변경이 없으면 현재 HEAD를 사용하고 그 사실을 기록한다.
-- commit 이후 CI 빌드 전에 `#버전-관리`에 따라 에이전트 분류와 버전 배정을 수행한다.
-- CI: 해당 SHA의 소스로 빌드·테스트·검사를 실행하고 모두 통과해야 성공한다. 첫 단계는 경로 SSOT 일치 검사(`skim_search.gen_paths --check`)다. 빌드는 `RUSTFLAGS=--remap-path-prefix`로 cargo 홈·저장소 경로를 `cargo-home`·`skim-search`로 바꾸고(값은 실행 중 계산, 커밋하지 않음), `--version` 확인 후 exe 안의 사용자 경로(security_policy LOCALPATH)가 1개라도 있으면 실패한다(`exe_path_scan` 이벤트에 개수만 기록).
-- CD: CI가 통과한 SHA에서 만들어진 산출물을 설정된 대상에 배포하고 배포 결과를 확인한다.
-- security: CD 산출물과 push 대상 커밋 범위를 검사한다 (`security.md`).
-- push: security가 통과한 뒤 같은 검증 커밋을 설정된 원격·브랜치로 push한다 (fast-forward만, force 금지). push 직전에 다음을 모두 확인하고 하나라도 어긋나면 push하지 않는다: HEAD·소스 불변(guard), security 결과의 SHA 일치, 패키지 체크섬 일치, `security_policy` 통과(exit 0), 원격 브랜치가 security 검사 시점과 동일. push 후 원격 HEAD가 해당 SHA인지 확인한다.
-- `--stop-after security` 로 push 직전까지만 실행할 수 있다. 기본은 push까지 실행한다.
+- commit: commit the configured change scope and record the SHA. With nothing to commit, use the current HEAD and record that.
+- After commit and before the CI build, classify with the agent and assign a version per `#versioning`.
+- CI: build, test and check the SHA's sources; all must pass. The first step is the path SSOT consistency check (`skim_search.gen_paths --check`). The build uses `RUSTFLAGS=--remap-path-prefix` to replace the cargo home and repository paths with `cargo-home` / `skim-search` (values computed at runtime, never committed). After `--version`, the CI fails if the exe contains any user path (security_policy LOCALPATH); only the count is recorded (`exe_path_scan` event).
+- CD: deploy the artifacts built from the CI-passed SHA to the configured target and verify the deployment.
+- security: check the CD artifacts and the commit range to be pushed (`security.md`).
+- push: after security passes, push the same verified commit to the configured remote/branch (fast-forward only, never forced). Right before pushing, all of the following must hold or nothing is pushed: HEAD and sources unchanged (guard), security result bound to the SHA, package checksum unchanged, `security_policy` passed (exit 0), remote branch unchanged since the security check. After the push, confirm the remote HEAD is the SHA.
+- `--stop-after security` runs up to just before push. The default runs through push.
+- If CI fails, CD and push do not run. If CD fails, push does not run. Every stage failure propagates as a non-zero pipeline exit code.
+- If sources or HEAD change after CI, the run's CD/push stops. Generated logs and artifacts are excluded from the source-change check.
+- Before running, confirm commit scope, CI commands, deploy target / method / verification, and push remote/branch. Missing required settings are run errors; a stage is never reported as passed or deployed in that case.
 
-## 단계 스위치와 비상 백업
+## Stage switches and emergency backup
 
-- `configs/one-shot.json`의 `"stages": {"ci", "cd", "security", "push"}` (true/false, 기본 true)로 단계를 끈다. commit은 항상 실행한다. 다른 키(`commit`, `policy` 등)·비불리언·의존 위반(cd는 ci, security는 cd 필요)은 실행 전 실패.
-- 꺼진 단계는 `state.json`에 `skipped`, 이벤트 `stage_skipped`로 기록한다. 실행 계획은 `state.json`의 `plan`(`mode`, `enabled`)에 남고 단계 자식 프로세스도 이를 따른다. 꺼진 단계를 단독 실행하면 실패한다.
-- `--urgent-backup`(비상 백업): 설정과 무관하게 ci·cd·security를 끄고 commit → push만 실행한다. 빌드가 없으므로 버전을 배정하지 않고 패키지도 게시하지 않는다. push 직전 `security_policy`(필수, `security.md` 상단), fast-forward만, push 후 원격 HEAD 확인은 그대로다. 콘솔·상태에 건너뛴 단계를 표시한다.
-- 비상 백업은 예외 수단이다. 코드 변경은 이후 일반 실행으로 다시 검증한다.
-- CI 실패 시 CD와 push를 실행하지 않는다. CD 실패 시 push를 실행하지 않는다. 모든 단계 실패는 pipeline의 0이 아닌 종료 코드로 전파한다.
-- CI 이후 소스 또는 HEAD가 달라지면 해당 실행의 CD/push를 중단한다. 생성 로그와 산출물은 소스 변경 판정에서 구분한다.
-- 실행 전에 commit 범위, CI 명령, 배포 대상·방법·확인 절차, push 원격·브랜치를 확인한다. 필수 설정이 없으면 실행 오류로 처리하며 단계를 성공 또는 배포 완료로 간주하지 않는다.
+- `"stages": {"ci", "cd", "security", "push"}` (true/false, default true) in `configs/one-shot.json` turns stages off. commit always runs. Other keys (`commit`, `policy`, …), non-booleans and dependency violations (cd needs ci, security needs cd) fail before the run.
+- Disabled stages are recorded as `skipped` in `state.json` and as `stage_skipped` events. The run plan is kept in `state.json` `plan` (`mode`, `enabled`) and stage child processes follow it. Running a disabled stage independently fails.
+- `--urgent-backup` (emergency backup): regardless of settings, turns ci, cd and security off and runs only commit → push. Without a build no version is assigned and no package is published. `security_policy` right before the push (mandatory, top of `security.md`), fast-forward only and the post-push remote HEAD check remain. Console and state show the skipped stages.
+- Emergency backup is an exception. Code changes are re-verified later with a normal run.
 
-## 버전 관리
+## Versioning
 
-- 사용자 지시(2026-10-01): `f88f1527` 재개로 자동 에이전트 분류를 적용한다. 명시적 --bump와 기존 SHA 재사용은 아래 규칙을 따른다.
+- User instruction (2026-10-01): automatic agent classification applies (`f88f1527` resumed). Explicit `--bump` and reuse for an existing SHA follow the rules below.
+- The SSOT for source identity is the full commit SHA. `sha8` is for display; lookups and duplicate checks use the full SHA.
+- No separate dev/user releases. Every package is named `skim-search-{major}.{minor}.{patch}-{sha8}-windows-x64.zip`.
+- Inside one-shot the configured agent command classifies the changes from the last released SHA to the current SHA. The agent returns one of `major`, `minor`, `patch` with a reason, base SHA and target SHA as structured output. Python validates it and computes the version number.
+- major breaks compatibility (usage, settings, …); minor adds compatible features; patch is a fix, improvement, docs or build change. With several changes the highest grade applies. A new SHA bumps at least patch.
+- major resets minor/patch to 0; minor resets patch to 0; patch increments patch only. The same rules apply to 0.x.
+- The same SHA reuses its assigned version, also on reruns after failures. The initial base version is set in the settings.
+- An assignment is recorded as `reserved` (used for build injection and CD publication) and becomes `released` only after the push is verified. The next number is bumped from the highest of `released` versions and reservations of **running** runs (top-level one-shot process PID alive). Reservations of other SHAs whose process ended without a push become `superseded` and their number is reused (`package_published` marks an already published package; nothing is deleted or overwritten). Failed runs therefore do not consume version numbers. Entries without `status` (written before reservations existed) count as `released` (`diagnostics/one-shot-version-on-failure/d6b840a2`).
+- The classification base SHA is the SHA of the last `released` version.
+- The shared `3rd_party/skim-search/versions.json` keeps full SHA ↔ version, classification, reason, base and assignment time. Concurrent runs use locking and atomic updates so different SHAs never get the same version.
+- Agent failures, missing or invalid classifications, base mismatches and mapping conflicts fail before CI.
+- Version and SHA are injected at build time. `Cargo.toml` is never edited and no extra commit is made for versioning.
 
-- 소스 식별의 SSOT는 전체 커밋 SHA다. `sha8`은 표시용이며 내부 조회·중복 판정에는 전체 SHA를 사용한다.
-- 개발/사용자 배포를 구분하지 않는다. 모든 패키지 이름은 `skim-search-{major}.{minor}.{patch}-{sha8}-windows-x64.zip`으로 한다.
-- one-shot 내부에서 설정된 에이전트 실행 명령을 호출해 직전 버전 배정 SHA부터 현재 SHA까지의 변경을 분류한다. 에이전트는 `major`, `minor`, `patch` 중 하나와 판단 근거, 비교 기준 SHA, 대상 SHA를 구조화된 결과로 반환한다. Python은 이 결과를 검증하고 버전 번호를 계산한다.
-- major는 기존 사용 방식·설정 등의 호환성을 깨는 변경, minor는 호환성을 유지하는 기능 추가, patch는 버그 수정·개선·문서·빌드 변경이다. 여러 변경이 있으면 가장 높은 등급을 적용한다. 새 SHA는 최소 patch를 올린다.
-- major 증가 시 minor/patch를 0으로, minor 증가 시 patch를 0으로 초기화한다. patch는 patch만 1 증가시킨다. 0.x에서도 같은 분류 규칙을 적용한다.
-- 같은 SHA는 이미 배정된 버전을 재사용한다. 실패 후 재실행에서도 배정은 유지한다. 최초 기준 버전은 실행 설정으로 명시한다.
-- 배정은 `reserved`(예약: 빌드 주입·CD 게시에 사용)로 기록하고, push 검증이 끝난 뒤에만 `released`로 확정한다. 다음 번호는 `released` 버전과 **실행 중인** 예약(최상위 one-shot 프로세스 PID 생존) 중 가장 높은 값에서 올린다. 프로세스가 끝났는데 push되지 않은 다른 SHA의 예약은 `superseded`로 바꾸고 번호를 다시 쓴다(게시된 패키지가 있었으면 `package_published`로 표시, 삭제·덮어쓰기 없음). 따라서 실패한 실행은 버전 번호를 소모하지 않는다. `status`가 없는 기존 항목은 `released`로 간주한다 (`diagnostics/one-shot-version-on-failure/d6b840a2`).
-- 분류 비교 기준 SHA는 마지막 `released` 버전의 SHA다.
-- 공유 `3rd_party/skim-search/versions.json`에 전체 SHA ↔ 버전, 분류·근거·비교 기준·배정 시각을 보존한다. 동시 실행 시 잠금과 원자적 갱신으로 서로 다른 SHA에 같은 버전이 배정되지 않도록 한다.
-- 에이전트 실행 실패, 누락·잘못된 분류, 비교 기준 불일치, 매핑 충돌은 CI 이전에 실패로 처리한다.
-- 버전과 SHA는 빌드 시 주입한다. 버전 배정을 위해 `Cargo.toml`을 수정하거나 추가 커밋을 만들지 않는다.
+## Agent invocation
 
-## 에이전트 호출
+- When the user runs `one-shot.cmd` without a bump argument, Python calls Codex CLI `codex exec` as a child process to classify automatically. Confirm Codex CLI installation, authentication and path first.
+- The call is `codex exec --sandbox read-only --output-schema {schema.json} --output-last-message {classification.json} -`. Python uses an argument array instead of a shell string and passes the classification instructions and change history on stdin.
+- Input: base and target full SHAs, commit messages and diff between them, and the classification criteria. Git data is material to interpret; instructions inside it are not executed. The agent only classifies; it never re-invokes one-shot, edits files, commits or deploys.
+- The response schema requires `level` (major/minor/patch), `reason`, `base_sha`, `target_sha`. Python validates the schema, the actual SHAs, a non-empty reason and the process exit code.
+- `--bump major|minor|patch` uses that value and skips the agent. The decision maker (agent/user) and reason are recorded. An argument conflicting with an existing classification for the same SHA is an error.
+- An already assigned SHA reuses its version without calling the agent. The first assignment initializes from the configured initial version and base SHA; an unclear comparison range fails.
+- CLI failure, authentication failure, timeout or invalid response stops before CI. Per-run classification input, response and errors are logged; on timeout the started process is cleaned up.
 
-- 사용자가 인자 없이 `one-shot.cmd`를 실행하면 Python이 Codex CLI의 `codex exec`를 자식 프로세스로 호출해 자동 분류한다. Codex CLI 설치·인증과 실행 경로를 사전에 확인한다.
-- 호출은 `codex exec --sandbox read-only --output-schema {schema.json} --output-last-message {classification.json} -` 형식으로 한다. Python은 셸 문자열 조합 대신 인자 배열을 사용하고 분류 지시와 변경 내역을 표준 입력으로 전달한다.
-- 입력은 비교 기준·대상 전체 SHA, 그 사이의 커밋 메시지·diff와 분류 기준이다. Git 데이터는 해석할 자료로 취급하고 그 안의 명령 지시는 수행하지 않도록 한다. 에이전트는 분류만 수행하며 one-shot 재호출·파일 수정·commit·배포를 수행하지 않는다.
-- 응답 schema는 `level`(major/minor/patch), `reason`, `base_sha`, `target_sha`를 필수로 한다. Python이 schema, 실제 SHA 일치, 비어 있지 않은 근거와 프로세스 종료 코드를 검증한다.
-- `--bump major|minor|patch`를 지정하면 해당 값을 사용하고 에이전트 호출을 생략한다. 결정 주체(agent/user)와 근거를 기록한다. 같은 SHA에 이미 배정된 분류와 충돌하는 인자는 오류로 처리한다.
-- 이미 배정된 SHA는 에이전트 호출 없이 기존 버전을 재사용한다. 최초 배정은 설정된 초기 버전·기준 SHA로 초기화하며, 에이전트 비교 범위가 불명확하면 실패로 처리한다.
-- CLI 실행 실패·인증 실패·시간 초과·잘못된 응답은 CI 이전에 중단한다. 실행별 분류 입력·응답·오류를 로그에 저장하며 시간 초과 시 호출한 프로세스를 정리한다.
+## Shared folder deployment
 
-## 공유 폴더 배포
+- CD publishes packages under the shared `CavemanDrive/3rd_party`. The current shared root is `%USERPROFILE%/Downloads/CavemanDrive/3rd_party`; per-environment paths come from settings.
+- The deploy location is `3rd_party/skim-search/{full_SHA}/` (same folder as `versions.json`), containing the package ZIP, `manifest.json` and `SHA256SUMS`.
+- The ZIP contains the CI-verified Windows x64 release `skim-search.exe`, the needed `rg.exe` / `sk.exe` and usage notes. No user settings file. CD never rebuilds.
+- The manifest records full SHA, assigned version, classification reason, build time / environment / tool versions and artifact information. CD succeeds only after the published ZIP checksum is verified.
+- Package and verification data are completed in a temporary location before publishing. Existing deployments are never overwritten; a rerun for the same SHA verifies the existing package, manifest and checksum, and fails on mismatch.
 
-- CD는 공유 `CavemanDrive/3rd_party` 아래에 패키지를 게시한다. 현재 공유 루트는 `%USERPROFILE%/Downloads/CavemanDrive/3rd_party`이며 환경별 경로는 실행 설정으로 지정한다.
-- 배포 위치는 `3rd_party/skim-search/{전체_SHA}/`다 (`versions.json`과 같은 폴더). 패키지 ZIP, `manifest.json`, `SHA256SUMS`를 저장한다.
-- ZIP은 CI에서 검증한 Windows x64 Release `skim-search.exe`, 필요한 `rg.exe`·`sk.exe`, 사용 안내를 포함한다. 사용자 설정 파일은 포함하지 않는다. CD에서 다시 빌드하지 않는다.
-- manifest에는 전체 SHA, 배정 버전, 분류 근거, 빌드 시각·환경·도구 버전과 산출물 정보를 기록한다. 게시한 ZIP의 체크섬을 확인한 후 CD 성공으로 처리한다.
-- 임시 위치에서 패키지와 검증 정보를 완성한 뒤 게시한다. 기존 배포본을 덮어쓰지 않으며 같은 SHA 재실행 시 기존 패키지·manifest·체크섬 일치를 확인한다. 불일치하면 실패로 처리한다.
+## Run evidence
 
-## 실행 증거
+- Per-run UTF-8 logs in `ref/actual/logs/one-shot/`.
+- Record run ID, commit SHA, stage order, start/end times, commands, exit codes, stdout/stderr, deploy artifacts / target / result, push remote / branch / result. No credentials in logs.
+- On success, failure or timeout clean up started child processes and temporary resources.
 
-- `ref/actual/logs/one-shot/`에 실행별 UTF-8 로그를 저장한다.
-- 실행 ID, 커밋 SHA, 단계 순서, 시작·종료 시각, 실행 명령, 종료 코드, stdout/stderr, 배포 산출물·대상·결과, push 원격·브랜치·결과를 기록한다. 인증 정보는 로그에 남기지 않는다.
-- 성공·실패·시간 초과 시 실행한 자식 프로세스와 임시 자원을 정리한다.
+## Failure issues
 
-## 실패 이슈
+- A failure exits non-zero and creates no separate failure artifact such as `failure.json`. The failure SSOT is one issue `issues/backlog/diagnostics/one-shot-failure/{uuid:8}.md` (exception in `issue.md#incidents`). Implementation: `cores/python/src/skim_search/diagnostics/one_shot/failure_issue.py`.
+- Only the outermost process records (nested stages only report). It follows the nested wrappers' `FAIL:` lines to the command that actually failed and writes, in English: failing stage and item, full SHA (or why it is unknown), run ID and time, exit code / timeout / not runnable, reproduction command, masked error summary (last 20 lines), evidence log paths. Cause and action are `Unconfirmed` / `None` until known.
+- The key is `sha | stage | item`. If a backlog/working issue with the same key exists (including SHAs that differ only in issue records / generated evidence), only a `- Recurred` line is added and no priority row is added. Writes are serialized by `ref/actual/logs/one-shot/.failure-issue.lock`.
+- Account names, secrets and personal e-mail are masked with the `security_policy` patterns. If the issue cannot be saved, `failure issue not saved` is printed and the original failure (exit 1) stands.
 
-- 실패하면 비정상 종료하고 `failure.json` 등 별도 실패 산출물을 만들지 않는다. 실패의 SSOT는 `issues/backlog/diagnostics/one-shot-failure/{uuid:8}.md` 하나다 (`issue.md#작업-중-생긴-일` 예외). 구현: `cores/python/src/skim_search/diagnostics/one_shot/failure_issue.py`.
-- 가장 바깥 프로세스만 기록한다(중첩 단계는 보고만). 중첩 래퍼의 `FAIL:` 줄을 따라 실제 실패 명령을 찾고, 실패 단계·항목, 전체 SHA(미확보면 사유), 실행 ID·시각, 종료 코드/시간 초과/실행 불가, 재현 명령, 마스킹한 오류 요약(마지막 20줄), 증거 로그 경로를 적는다. 원인·조치는 확인 전 `미확인`/`없음`.
-- 키는 `sha | stage | item`. 같은 키(이슈 기록·생성 증거만 다른 SHA 포함)의 backlog/working 이슈가 있으면 `- 재발` 줄만 추가하고 우선순위 행을 늘리지 않는다. 기록은 `ref/actual/logs/one-shot/.failure-issue.lock`으로 직렬화한다.
-- 계정명·비밀정보·개인 이메일은 `security_policy`의 패턴으로 마스킹한다. 이슈 저장에 실패하면 콘솔에 `failure issue not saved`를 출력하고 원래 실패(exit 1)를 유지한다.
+## Keyboard use alert
 
-## 키보드 사용 알림
-
-- 키보드·마우스 입력을 주입하는 단계(CI의 UI e2e, `KEYBOARD_MODULES`) 직전에 모달이 아닌 알림을 한 번 띄운다. 한 실행(run)에서 한 번만 띄우고, 이후 키보드 사용 단계에서는 다시 띄우지 않는다.
-- 알림은 포커스를 가져가지 않는 Windows 토스트를 사용하고, 실패하면 트레이 풍선 알림으로 대체한다. 알림 후 `keyboard_alert_lead_seconds`(기본 5초) 기다린 뒤 진행한다.
-- 알림 시각·방식·대기 시간을 실행 상태(`state.json`의 `keyboard_alert`)와 이벤트 로그에 남긴다.
+- Right before a stage that injects keyboard/mouse input (CI UI e2e, `KEYBOARD_MODULES`) show one non-modal alert. Once per run; later keyboard stages do not show it again.
+- The alert is a Windows toast that does not take focus, falling back to a tray balloon. After the alert wait `keyboard_alert_lead_seconds` (default 5 s) before continuing.
+- Alert time, method and wait are recorded in the run state (`state.json` `keyboard_alert`) and the event log.

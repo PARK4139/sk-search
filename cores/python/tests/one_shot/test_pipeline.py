@@ -524,7 +524,7 @@ class PipelineTests(unittest.TestCase):
         text = issues[0].read_text(encoding="utf-8")
         sha = self.git("rev-parse", "HEAD")
         self.assertIn(f"sha={sha} | stage=ci |", text)
-        self.assertIn("종료 코드 3", text)
+        self.assertIn("exit code 3", text)
         self.assertNotIn("Alice", text)
         self.assertNotIn(token, text)
         self.assertFalse(list(self.folder.rglob("failure.json")))
@@ -536,7 +536,7 @@ class PipelineTests(unittest.TestCase):
         self.assertIn(b"failure issue updated", second.stderr)
         self.assertEqual(self.failure_issues(), issues)
         text = issues[0].read_text(encoding="utf-8")
-        self.assertEqual(text.count("- 재발 "), 1)
+        self.assertEqual(text.count("- Recurred "), 1)
         self.assertEqual((self.root / REL["PRIORITY"]).read_text(encoding="utf-8").count(f"| {issues[0].stem} |"), 1)
 
     def test_failure_before_sha_and_save_failure(self):
@@ -547,8 +547,8 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 1)
         [issue] = self.failure_issues()
         text = issue.read_text(encoding="utf-8")
-        self.assertIn("sha=미확보 | stage=setup |", text)
-        self.assertIn("미확보 (commit 단계 이전 실패)", text)
+        self.assertIn("sha=unknown | stage=setup |", text)
+        self.assertIn("unknown (failed before the commit stage)", text)
         # issue cannot be saved (backlog family path is a file): original failure and exit code stay
         shutil.rmtree(self.root / REL["ISSUES"] / "backlog" / FAILURE_FAMILY.parent)
         (self.root / REL["ISSUES"] / "backlog" / FAILURE_FAMILY.parent).write_text("blocker", encoding="utf-8")
@@ -564,10 +564,10 @@ class PipelineTests(unittest.TestCase):
 
     def test_failure_kind_and_item_normalization(self):
         from skim_search.diagnostics.one_shot import failure_issue as fi
-        self.assertEqual(fi.kind_of("command timed out: cargo; command-0123456789ab", "Failure"), "시간 초과")
-        self.assertEqual(fi.kind_of("command failed: cargo (exit 101); command-0123456789ab", "Failure"), "종료 코드 101")
-        self.assertEqual(fi.kind_of("tool missing", "FileNotFoundError"), "실행 불가")
-        self.assertEqual(fi.kind_of("security result missing or for another SHA", "Failure"), "검증 실패 (Failure)")
+        self.assertEqual(fi.kind_of("command timed out: cargo; command-0123456789ab", "Failure"), "timeout")
+        self.assertEqual(fi.kind_of("command failed: cargo (exit 101); command-0123456789ab", "Failure"), "exit code 101")
+        self.assertEqual(fi.kind_of("tool missing", "FileNotFoundError"), "not runnable")
+        self.assertEqual(fi.kind_of("security result missing or for another SHA", "Failure"), "check failed (Failure)")
         # run-specific command IDs, SHAs and absolute directories do not split the same failure item
         a = fi.item_of("command failed: " + "C:" + "\\tools\\cargo.exe (exit 101); command-0123456789ab at " + "a" * 40)
         b = fi.item_of("command failed: " + "D:" + "\\x\\y\\cargo.exe (exit 101); command-ba9876543210 at " + "b" * 40)
@@ -590,7 +590,7 @@ class PipelineTests(unittest.TestCase):
             t.join()
         self.assertEqual(sum(created for _, created in results), 1)
         [issue] = self.failure_issues()
-        self.assertEqual(issue.read_text(encoding="utf-8").count("- 재발 "), 3)
+        self.assertEqual(issue.read_text(encoding="utf-8").count("- Recurred "), 3)
         # once closed, a recurrence creates a new backlog issue that links the closed one
         closed = self.root / REL["ISSUES"] / "closed" / FAILURE_FAMILY / issue.name
         closed.parent.mkdir(parents=True)
@@ -598,8 +598,8 @@ class PipelineTests(unittest.TestCase):
         path, created = fi.record(self.root, run_dir, **args)
         self.assertTrue(created)
         self.assertNotEqual(path.name, closed.name)
-        self.assertIn(f"이전 기록: `{REL['ISSUES']}/closed/{FAILURE_FAMILY.as_posix()}/", path.read_text(encoding="utf-8"))
-        self.assertNotIn("- 재발 ", closed.read_text(encoding="utf-8").split("- 재발 ", 1)[0] + "")
+        self.assertIn(f"Previous record: `{REL['ISSUES']}/closed/{FAILURE_FAMILY.as_posix()}/", path.read_text(encoding="utf-8"))
+        self.assertNotIn("- Recurred ", closed.read_text(encoding="utf-8").split("- Recurred ", 1)[0] + "")
 
 
 if __name__ == "__main__":

@@ -1,60 +1,66 @@
-# rules — skim-search 프로젝트 규칙 (진입점)
+# rules — skim-search project rules (entry point)
 
-작업 전 이 파일을 먼저 읽고, 아래 표에서 해당 작업의 파일만 추가로 읽는다.
-에이전트 행동 규칙(응답 언어, 보고 방식 등)은 `AGENTS.md`를 따른다.
+Read this file before any task, then read only the files listed for that task below.
+Agent behavior rules (reply language, reporting style, etc.) follow `AGENTS.md`.
 
-## 작업별 읽을 파일
+## Files to read per task
 
-| 작업 | 읽을 파일 |
-|------|-----------|
-| issue 작성 | `sources.md`, `families.md`, `issue.md` |
-| issue 착수 / 완료 | `issue.md`, `families.md` |
-| 코드 구현 | `implementation.md`, `families.md`, `environment.md` |
-| 검증 / 증거 수집 | `environment.md`, `issue.md#완료-조건과-보고` |
-| one-shot 파이프라인 구현 / 실행 | `one-shot.md`, `environment.md`, `security.md` |
-| push (수동 포함) | `security.md` |
-| 작업 중 생긴 일 기록 | `issue.md#작업-중-생긴-일`, `issue.md#파일-템플릿` |
-| 규칙 수정 | 이 파일 `#규칙-수정` |
+| Task | Files |
+|------|-------|
+| Write an issue | `sources.md`, `families.md`, `issue.md` |
+| Start / finish an issue | `issue.md`, `families.md` |
+| Implement code | `implementation.md`, `families.md`, `environment.md` |
+| Verify / collect evidence | `environment.md`, `issue.md#completion-and-report` |
+| Implement / run the one-shot pipeline | `one-shot.md`, `environment.md`, `security.md` |
+| Push (including manual) | `security.md` |
+| Record an incident | `issue.md#incidents`, `issue.md#file-template` |
+| Edit rules | this file, `#editing-rules` |
 
-## 파일 목록
+## File list
 
-| 파일 | 내용 |
-|------|------|
-| `sources.md` | 요구사항 근거(handover, showreel), 근거 간 우선순위, `추정:` 표기 |
-| `families.md` | function family 목록: 의미 · 근거 FR/AC · 구현 위치 |
-| `issue.md` | issue 경로·UUID·우선순위·작성/착수/완료 절차·템플릿·근거·기록 규칙 |
-| `implementation.md` | `cores/` 코드 구조, 의존 방향, 테스트·로그 규칙 |
-| `environment.md` | 외부 도구 경로, cargo 설정, 증거 경로, 환경변수, 검증 스크립트 |
-| `one-shot.md` | commit → CI → CD → push 파이프라인, 언어별 책임, 실행 증거 |
-| `security.md` | push 전 보안 위험 검사: 범위, 차단 항목(SEC-*), 예외, 결과 기록 |
+| File | Content |
+|------|---------|
+| `sources.md` | Requirement sources (handover, showreel), precedence between sources, `Assumption:` marking |
+| `families.md` | Function family list: meaning · source FR/AC · implementation location |
+| `issue.md` | Issue paths · UUID · priority · write/start/finish procedure · template · language · incident rules |
+| `implementation.md` | Code structure under `cores/`, dependency direction, test and log rules |
+| `environment.md` | External tool paths, cargo settings, evidence paths, environment variables, test scripts |
+| `one-shot.md` | commit → CI → CD → security → push pipeline, language responsibilities, run evidence |
+| `security.md` | Pre-push security checks: scope, blocking items (SEC-*), exceptions, result records |
 
-## 참조 표기
+## Language
 
-- handover 절: 항상 `handover §N`. 접두어 없는 `§N` 단독 사용 금지. 여러 절은 접두어 1회로 나열 (`handover §5, §24`).
-- FR-xxx / AC-xxx: handover §27 (FR 목록), §28 (Acceptance Criteria).
-- 규칙: `rules/<file>.md#<heading>` (예: `rules/issue.md#상태-전이와-착수`). 번호 참조 금지.
-- issue: `{function family}/{sub family}/{uuid:8}` — 상태 폴더(`backlog`/`working`/`closed`) 생략.
-- showreel 시각: `showreel 00:SS`.
+- Rules (`rules/*.md`) and issues (`issues/**`, including `priority.md`) are written in **English** (user decision 2026-10-02).
+- Keep verbatim, in backticks, text that must match something outside the document: product UI strings (e.g. toast title `검색 완료`), log lines, command output, quoted file content. Do not translate them.
+- Chat replies to the user follow `AGENTS.md` (Korean). The requirement source `ref/handover.md` and its history `ref/closed/` stay in their original language.
 
-## 용어
+## Reference notation
 
-| 용어 | 의미 |
-|------|------|
-| function family | issue 1단계 폴더. 사용자 관점 기능 묶음 (`families.md`) |
-| sub family | issue 2단계 폴더. 단일 문제/기능 단위 |
-| 우선순위 | `issues/priority.md`에 기록하는 Critical / High / Normal / Low 등급 |
-| UUID | issue 파일명에 쓰는 UUID 앞 8자리 소문자 16진수 |
-| 상태 폴더 | `issues/backlog`, `issues/working`, `issues/closed` |
-| 작업 issue | 요구사항을 구현·검증하는 issue |
-| 기록 issue | 작업 중 생긴 일을 기록하는 issue. 항상 `closed` (`issue.md#작업-중-생긴-일`) |
-| 근거 | 요구사항 출처 (`handover.md`, showreel) |
-| 증거 | 구현 실측 결과 (`ref/actual/`의 로그·스크린샷) |
-| `추정:` | 근거 없이 해석한 내용 표시 |
+- handover sections: always `handover §N`. Never a bare `§N`. Several sections share one prefix (`handover §5, §24`).
+- FR-xxx / AC-xxx: handover §27 (FR list), §28 (Acceptance Criteria).
+- Rules: `rules/<file>.md#<heading>` (e.g. `rules/issue.md#state-transitions-and-start`). No numbered references.
+- Issues: `{function family}/{sub family}/{uuid:8}` — omit the state folder (`backlog`/`working`/`closed`).
+- showreel time: `showreel 00:SS`.
 
-우선순위와 UUID 목록은 `issues/priority.md`에서 관리한다 (`issue.md#우선순위-목록`).
+## Terms
 
-## 규칙 수정
+| Term | Meaning |
+|------|---------|
+| function family | First-level issue folder. A user-facing feature group (`families.md`) |
+| sub family | Second-level issue folder. One problem / feature unit |
+| priority | Critical / High / Normal / Low grade recorded in `issues/priority.md` |
+| UUID | First 8 lowercase hex characters of a UUID, used as the issue file name |
+| state folder | `issues/backlog`, `issues/working`, `issues/closed` |
+| work issue | An issue that implements and verifies a requirement |
+| incident issue | An issue recording something that happened during work. Always `closed` (`issue.md#incidents`) |
+| source | Origin of a requirement (`handover.md`, showreel) |
+| evidence | Measured implementation result (logs and screenshots in `ref/actual/`) |
+| `Assumption:` | Marks an interpretation that has no source |
 
-- 규칙 하나는 한 파일에만 쓴다. 다른 파일에서는 링크로 참조한다 (중복 기술 금지).
-- 파일을 추가·삭제하면 이 파일의 두 표를 갱신한다.
-- 사용자 지시로 규칙을 바꾸면 해당 파일에 반영 후 변경 요약을 보고한다.
+Priority and UUID list: `issues/priority.md` (`issue.md#priority-list`).
+
+## Editing rules
+
+- Each rule lives in exactly one file. Other files reference it by link (no duplication).
+- When adding or removing a file, update both tables in this file.
+- When a rule changes on user instruction, apply it to the owning file and report a summary of the change.

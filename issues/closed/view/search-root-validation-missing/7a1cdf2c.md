@@ -1,24 +1,24 @@
 # title
-존재하지 않는 경로 / 파일 경로 입력 시 검색 차단 부재
+No search block for a nonexistent path / file path as the search root
 
 # pre-condition
-- skim-search.exe 실행
-- 공통 테스트 workspace (rules/issue.md#공통-테스트-workspace)
+- skim-search.exe running
+- Common test workspace (rules/issue.md#common-test-workspace)
 
 # steps
-근거: FR-103, handover §5
-1. 검색 경로에 `D:\Projects\not-exist` 입력, Query `login`
-2. 검색 경로에 `D:\Projects\my-project\README.md` (file) 입력, Query `login`
-3. 검색 경로에 `D:\Projects\my-project` 입력, Query `login`
+Source: FR-103, handover §5
+1. Search root `D:\Projects\not-exist`, query `login`
+2. Search root `D:\Projects\my-project\README.md` (a file), query `login`
+3. Search root `D:\Projects\my-project`, query `login`
 
 # actual result
-- PASS: 존재하지 않는 경로 / 파일 경로 / 상대 경로 / 빈 값 → 검색 안 함, 결과 비움, stats `검색 경로 오류: ...`, warning Toast (같은 오류는 1회). rg 실행 없음.
-- 증거: issue_checks root_validation, ui_flow, e2e `ref/actual/screenshot/frames/e2e_toasts.png`, 로그 `[view] generation=N root rejected: ...`
+- PASS: nonexistent path / file path / relative path / empty → no search, results cleared, stats `검색 경로 오류: ...`, warning toast (once per identical error). rg not run.
+- Evidence: issue_checks root_validation, ui_flow, e2e `ref/actual/screenshot/frames/e2e_toasts.png`, log `[view] generation=N root rejected: ...`
 
 # expected result
-- 1, 2: rg/sk 미실행, 결과 없음, 경로 오류 표시 (warning Toast 또는 입력란 오류 표시)
-- 3: 정상 검색
-- 검증 증거: `ref/actual/logs/skim-search.log`에 1, 2의 경로 거부 사유와 rg spawn 없음 기록
+- 1, 2: rg/sk not run, no results, path error shown (warning toast or an error on the box)
+- 3: normal search
+- Evidence: rejection reasons for 1 and 2 and no rg spawn in `ref/actual/logs/skim-search.log`
 
 # label
 SQA_sk_0_0_0
@@ -27,4 +27,4 @@ SQA_sk_0_0_0
 OS: windows 10 pro
 hostname: TBD
 
-# 담당자
+# assignee

@@ -1,21 +1,21 @@
 # title
-추정: showreel의 [파일별 그룹화] / [정렬: 관련도] 컨트롤 요구 확인
+Assumption: confirm the requirement for the showreel `[파일별 그룹화]` / `[정렬: 관련도]` controls
 
 # pre-condition
-- 없음 (요구 미정의)
+- None (requirement not defined)
 
 # steps
-근거: showreel 00:01 (handover 미정의)
-1. showreel 00:01 Result Panel 헤더의 `파일별 그룹화`, `정렬: 관련도` 확인
+Source: showreel 00:01 (not defined by handover)
+1. Check `파일별 그룹화` and `정렬: 관련도` in the result panel header at showreel 00:01
 
 # actual result
-반려 (2026-10-01): 파일별 그룹화 토글·정렬(관련도) 컨트롤 — handover에 없는 showreel 전용 요소. rules/sources.md 에 따라 요구 확정 전 구현하지 않는다.
-- 현재 상태: 미구현 (handover §24 최종 UI 기준).
-- 재개 조건: 사용자가 요구를 확정하면 이 issue를 backlog로 되돌리거나 새 issue로 작성.
+Rejected (2026-10-01): group-by-file toggle and sort (relevance) controls are showreel-only elements not in handover. Per rules/sources.md they are not implemented before the requirement is confirmed.
+- Current state: not implemented (based on the final UI of handover §24).
+- Resume condition: when the user confirms the requirement, move this issue back to backlog or write a new issue.
 
 # expected result
-- 요구 확정 전까지 구현 보류
-- 확정 시 동작(그룹 해제 모드, 정렬 기준 목록)을 별도 issue로 작성
+- Implementation on hold until the requirement is confirmed
+- If confirmed, write the behavior (ungrouped mode, sort criteria list) as a separate issue
 
 # label
 SQA_sk_0_0_0
@@ -24,4 +24,4 @@ SQA_sk_0_0_0
 OS: windows 10 pro
 hostname: TBD
 
-# 담당자
+# assignee

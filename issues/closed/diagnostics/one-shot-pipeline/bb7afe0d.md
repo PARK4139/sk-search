@@ -1,45 +1,45 @@
 # title
-one-shot으로 commit → CI → CD → push 파이프라인 구현
+Implement the one-shot commit → CI → CD → push pipeline
 
 # pre-condition
-- 현재 버전 정책: 사용자 재개 지시에 따라 `diagnostics/one-shot-agent-classification/f88f1527`에서 자동 분류를 구현한다. 실제 push는 사용자 지시에 따라 차단한다.
-- Git 저장소, Rust 빌드 도구, Python 및 PowerShell 실행 환경
-- commit 범위, CI 명령, 배포 대상·방법·확인 절차, push 원격·브랜치 설정 필요
+- Version policy at the time: per the user's resume instruction, automatic classification is implemented in `diagnostics/one-shot-agent-classification/f88f1527`. Actual push is blocked per user instruction.
+- Git repository, Rust build tools, Python and PowerShell runtime
+- Settings needed: commit scope, CI commands, deploy target / method / verification, push remote / branch
 
 # steps
-근거: 사용자 요청 (2026-10-01): one-shot 호출 구조와 commit → CI → 통과 시 CD → push 파이프라인; rules/one-shot.md
-1. 루트에 `one-shot.cmd` → `one-shot.ps1` → `one_shot.py` 진입점을 구현한다.
-2. `cores/scripts/one_shot/`에 commit, ci, cd, push 각각의 `.cmd` → `.ps1` → `.py` 실행 경로를 구현한다.
-3. `.cmd`는 가장 얇게, `.ps1`은 얇게 유지하고 복잡한 로직은 Python에 작성한다. 극초고속 처리가 필요한 부분만 실측 근거로 Rust를 사용한다.
-4. Python pipeline이 commit → CI(빌드·테스트·검사) → 성공 시 CD(배포) → 성공 시 push를 실행하도록 구성한다.
-5. 단계별 실패·시간 초과·인자 전달·종료 코드 전파와 동일 커밋의 검증·배포·push를 확인한다.
-6. one-shot 내부에서 에이전트가 변경을 major/minor/patch로 분류하고, Python이 전체 SHA에 버전을 배정·보존한 뒤 빌드에 주입하도록 구현한다.
-7. CI에서 검증한 산출물을 공유 `3rd_party/skim-search/releases/{전체_SHA}/`에 `skim-search-{version}-{sha8}-windows-x64.zip`, manifest, 체크섬으로 게시한다.
+Source: user request (2026-10-01): one-shot call structure and the commit → CI → CD on pass → push pipeline; rules/one-shot.md
+1. Implement the root entry point `one-shot.cmd` → `one-shot.ps1` → `one_shot.py`.
+2. Implement `.cmd` → `.ps1` → `.py` run paths for commit, ci, cd and push in `cores/scripts/one_shot/`.
+3. Keep `.cmd` thinnest and `.ps1` thin; write the complex logic in Python. Use Rust only where measurements show extreme speed is needed.
+4. The Python pipeline runs commit → CI (build, test, checks) → CD (deploy) on success → push on success.
+5. Confirm per-stage failure, timeout, argument passing and exit code propagation, and that verification, deployment and push use the same commit.
+6. Inside one-shot an agent classifies changes as major/minor/patch; Python assigns and keeps a version per full SHA and injects it into the build.
+7. Publish the CI-verified artifacts to the shared `3rd_party/skim-search/releases/{full_SHA}/` as `skim-search-{version}-{sha8}-windows-x64.zip`, manifest and checksums.
 
 # actual result
 PASS (2026-10-02).
-- 구현: 루트 `one-shot.cmd` → `.ps1` → `one_shot.py`, `cores/scripts/one_shot/{commit,ci,cd,security,push}.cmd/.ps1/.py` (launch.ps1 경유), `pipeline.py`. 배포 위치는 efcb006b 결정으로 `3rd_party/skim-search/{전체_SHA}/` (steps 7의 `releases/` 아님). 실제 push 차단은 사용자 지시(2026-10-01 "push via one-shot")로 해제, security 단계 추가(aea6b525).
-- 실제 실행 PASS: run `ref/actual/logs/one-shot/20261002-013512-7acafd6a` — commit→ci→cd→security→push 모두 passed, SHA 76e944e, 버전 0.2.4(`--bump patch`), exe `--version` = `skim-search 0.2.4 76e944e…`, 패키지·manifest·SHA256SUMS 게시 및 체크섬 확인, origin/main == 76e944e.
-- 자동 검증 `test_pipeline` 21/21 PASS (`ref/actual/logs/one-shot-pipeline-tests.log`, 공백 포함 경로 `repo with spaces`·다른 cwd에서 래퍼 실행):
-  - 성공 경로·동일 SHA 산출물: full wrappers push, stop-after security.
-  - 버전: bump 단계별 초기화, 같은 SHA 재사용·충돌, 동시 배정 유일성, 에이전트 분류·재사용·잘못된 응답·시간 초과 시 CI 이전 중단, --bump 시 에이전트 미호출.
-  - 실패 전파: CI 실패 시 CD 미실행, CD 실패 시 security·push 미실행·원격 불변(신규), 시간 초과 시 자식 프로세스 종료, 변경 없을 때 HEAD 사용·`commit_unchanged` 기록(신규), 필수 설정 누락 시 사전 실패(신규), HEAD·패키지 변조 guard, 재게시 시 기존 패키지 보존.
-  - push 게이트: 보안 정책 차단, 원격 변경 시 차단, 다른 SHA 결과 차단, `--run-dir` 없는 단독 push 거부.
-- 실제 실행 중 발견·수정 (closed): one-shot-concurrent-build-overwrites-exe, scope-test-depends-on-fixture-content, e2e-common-missing-os-import, ui-flow-root-rerun-intermittent, e2e-ui-stats-after-fixture-change.
-- 문서: `rules/one-shot.md#사용법`에 준비·설정·전체/부분/단계 독립 실행·자체 테스트 명령 추가.
+- Implementation: root `one-shot.cmd` → `.ps1` → `one_shot.py`, `cores/scripts/one_shot/{commit,ci,cd,security,push}.cmd/.ps1/.py` (through launch.ps1), `pipeline.py`. The deploy location is `3rd_party/skim-search/{full_SHA}/` per the efcb006b decision (not `releases/` as in step 7). The push block was lifted by user instruction (2026-10-01 "push via one-shot"), and a security stage was added (aea6b525).
+- Real run PASS: run `ref/actual/logs/one-shot/20261002-013512-7acafd6a` — commit→ci→cd→security→push all passed, SHA 76e944e, version 0.2.4 (`--bump patch`), exe `--version` = `skim-search 0.2.4 76e944e…`, package / manifest / SHA256SUMS published and checksum verified, origin/main == 76e944e.
+- Automated verification `test_pipeline` 21/21 PASS (`ref/actual/logs/one-shot-pipeline-tests.log`; path with spaces `repo with spaces`, wrappers run from another cwd):
+  - Success path and same-SHA artifacts: full wrappers push, stop-after security.
+  - Versions: resets per bump level, same-SHA reuse and conflict, unique concurrent assignment, agent classification / reuse / invalid response / timeout stop before CI, no agent call with --bump.
+  - Failure propagation: CI failure → no CD; CD failure → no security / push, remote unchanged (new); timeout kills child processes; no changes → HEAD used and `commit_unchanged` recorded (new); missing required settings fail before the run (new); HEAD / package tamper guard; republishing keeps the existing package.
+  - Push gate: blocked by the security policy, blocked when the remote changed, blocked by a result for another SHA, standalone push without `--run-dir` refused.
+- Found and fixed during real runs (closed): one-shot-concurrent-build-overwrites-exe, scope-test-depends-on-fixture-content, e2e-common-missing-os-import, ui-flow-root-rerun-intermittent, e2e-ui-stats-after-fixture-change.
+- Docs: `rules/one-shot.md#usage` gained prerequisites, settings, full / partial / independent stage runs and self-test commands.
 
 # expected result
-- `rules/one-shot.md`의 호출 구조, 단계 순서, 언어별 책임을 충족하며 각 단계도 독립 실행 가능하다.
-- 공백이 있는 경로와 다른 작업 디렉터리에서 인자 및 종료 코드가 계층마다 보존된다.
-- 성공 경로는 commit → CI → CD → push 순서로 실행되며 동일 SHA의 소스와 산출물을 사용한다.
-- 사용자 확정 요구(2026-10-01): SHA가 SSOT이며 모든 빌드·사용자 배포는 버전+SHA 형식을 사용한다. 에이전트 분류와 Python 버전 계산은 `rules/one-shot.md#버전-관리`를 충족한다.
-- 새 전체 SHA마다 버전이 바뀌며 같은 SHA는 재실행·실패 재시도에서도 같은 버전을 유지한다. major/minor 초기화, 동시 배정, 분류 실패와 SHA/기준 불일치를 검증한다.
-- `rules/one-shot.md#공유-폴더-배포`에 따라 공유 3rd_party 하위에 검증한 Release 패키지가 게시된다. 재빌드·사용자 설정 포함·기존 배포 덮어쓰기가 없으며 체크섬 확인 결과를 로그로 남긴다.
-- commit 또는 CI 실패 시 후속 단계가 실행되지 않는다. CD 실패 시 push가 실행되지 않는다. push 실패는 pipeline 실패로 보고된다.
-- commit할 변경이 없으면 현재 HEAD를 사용하고 로그로 구분한다. CI 이후 소스 또는 HEAD가 변경되면 CD/push를 중단한다.
-- 필수 실행 설정이 없으면 실행 전에 실패하며, 미설정 CD를 성공으로 보고하지 않는다.
-- 성공·실패·시간 초과 경로에 대한 검증 로그가 `ref/actual/logs/one-shot/`에 UTF-8로 저장된다. 실행 ID, SHA, 단계 명령·시각·종료 코드·출력과 배포/push 결과를 포함한다.
-- 실행한 자식 프로세스와 임시 자원을 정리한다. 설치·설정·독립 실행·전체 실행 명령을 문서화한다.
+- Meets the call structure, stage order and language responsibilities of `rules/one-shot.md`; each stage also runs independently.
+- Arguments and exit codes are preserved at every layer with paths containing spaces and from other working directories.
+- The success path runs commit → CI → CD → push and uses the sources and artifacts of the same SHA.
+- User-confirmed requirement (2026-10-01): the SHA is the SSOT and every build and user release uses the version+SHA format. Agent classification and Python version calculation meet `rules/one-shot.md#versioning`.
+- Every new full SHA gets a new version; the same SHA keeps its version on reruns and retries after failures. major/minor resets, concurrent assignment, classification failures and SHA/base mismatches are verified.
+- A verified release package is published under the shared 3rd_party per `rules/one-shot.md#shared-folder-deployment`. No rebuild, no user settings, no overwriting of existing deployments; checksum verification is logged.
+- If commit or CI fails, later stages do not run. If CD fails, push does not run. A push failure is reported as a pipeline failure.
+- With nothing to commit the current HEAD is used and this is distinguished in the log. If sources or HEAD change after CI, CD/push stop.
+- Missing required settings fail before the run, and an unconfigured CD is never reported as success.
+- Verification logs for success, failure and timeout paths are saved as UTF-8 in `ref/actual/logs/one-shot/`, including run ID, SHA, stage commands, times, exit codes, output and deploy/push results.
+- Started child processes and temporary resources are cleaned up. Installation, settings, independent and full run commands are documented.
 
 # label
 SQA_sk_0_0_0
@@ -48,4 +48,4 @@ SQA_sk_0_0_0
 OS: Windows 10 Pro
 hostname: TBD
 
-# 담당자
+# assignee

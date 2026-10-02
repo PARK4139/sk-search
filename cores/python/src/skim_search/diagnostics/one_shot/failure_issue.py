@@ -16,7 +16,7 @@ from skim_search import REL
 from .. import security_policy as sp
 
 FAMILY = Path("diagnostics") / "one-shot-failure"
-KEY_PREFIX = "- 실패 키: "
+KEY_PREFIX = "- Failure match: "
 COMMAND_ID = re.compile(r"command-[0-9a-f]{12}")
 TAIL_LINES = 20
 
@@ -56,10 +56,10 @@ def tail(run_dir: Path, command: str | None) -> str:
 
 def kind_of(message: str, exc_type: str) -> str:
     if "timed out" in message:
-        return "시간 초과"
+        return "timeout"
     if code := re.search(r"\(exit (-?\d+)\)", message):
-        return f"종료 코드 {code.group(1)}"
-    return "실행 불가" if exc_type in ("FileNotFoundError", "PermissionError", "OSError") else f"검증 실패 ({exc_type})"
+        return f"exit code {code.group(1)}"
+    return "not runnable" if exc_type in ("FileNotFoundError", "PermissionError", "OSError") else f"check failed ({exc_type})"
 
 
 def item_of(message: str) -> str:
@@ -76,7 +76,7 @@ def _relative(root: Path, path: Path) -> str:
         return mask(str(path))
 
 
-KEY = re.compile(r"^- 실패 키: `sha=(?P<sha>\S+) \| stage=(?P<stage>\S+) \| item=(?P<item>.*)`$", re.M)
+KEY = re.compile(r"^- Failure match: `sha=(?P<sha>\S+) \| stage=(?P<stage>\S+) \| item=(?P<item>.*)`$", re.M)
 
 
 def _git_same_source(root: Path):
@@ -98,7 +98,7 @@ def _active(root: Path, sha: str, stage: str, item: str, states: tuple[str, ...]
             if not found or found["stage"] != stage or found["item"] != item:
                 continue
             old = found["sha"]
-            if old == sha or ("미확보" not in (old, sha) and same_source(old, sha)):
+            if old == sha or ("unknown" not in (old, sha) and same_source(old, sha)):
                 return path
     return None
 
@@ -106,7 +106,7 @@ def _active(root: Path, sha: str, stage: str, item: str, states: tuple[str, ...]
 def _add_priority(root: Path, issue_id: str, reason: str) -> None:
     path = root / REL["PRIORITY"]
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True) if path.exists() else \
-        ["| 우선순위 | UUID | 근거 |\n", "|---|---|---|\n"]
+        ["| Priority | UUID | Source |\n", "|---|---|---|\n"]
     if any(f"| {issue_id} |" in l for l in lines):
         return
     row = f"| Normal | {issue_id} | {reason} |\n"
@@ -129,17 +129,17 @@ def _record(root, run_dir, *, stage, sha, sha_reason, message, exc_type, repro, 
     root, run_dir = Path(root), Path(run_dir)
     inner, command = innermost(run_dir, message)
     item = item_of(inner)
-    key_line = f"{KEY_PREFIX}`sha={sha or '미확보'} | stage={stage} | item={item}`"
+    key_line = f"{KEY_PREFIX}`sha={sha or 'unknown'} | stage={stage} | item={item}`"
     when = datetime.now().astimezone().isoformat(timespec="seconds")
     evidence = _relative(root, run_dir) + (f"/{command}.stderr.log, {command}.stdout.log" if command else "")
-    occurrence = f"- 발생 {when}: run `{run_id}`, SHA {sha or '미확보'}, {kind_of(inner, exc_type)}, 증거 `{evidence}`"
-    key_sha = sha or "미확보"
+    occurrence = f"- Occurred {when}: run `{run_id}`, SHA {sha or 'unknown'}, {kind_of(inner, exc_type)}, evidence `{evidence}`"
+    key_sha = sha or "unknown"
 
     existing = _active(root, key_sha, stage, item, ("backlog", "working"), same_source)
     if existing:
         text = existing.read_text(encoding="utf-8")
         head, _, rest = text.partition("# expected result")
-        existing.write_text(head.rstrip("\n") + "\n" + occurrence.replace("- 발생", "- 재발", 1) + "\n\n# expected result" + rest, encoding="utf-8")
+        existing.write_text(head.rstrip("\n") + "\n" + occurrence.replace("- Occurred", "- Recurred", 1) + "\n\n# expected result" + rest, encoding="utf-8")
         return existing, False
 
     previous = _active(root, key_sha, stage, item, ("closed",), same_source)
@@ -147,37 +147,37 @@ def _record(root, run_dir, *, stage, sha, sha_reason, message, exc_type, repro, 
     path = root / REL["ISSUES"] / "backlog" / FAMILY / f"{issue_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     summary = mask(tail(run_dir, command)) or mask(inner)
-    sha_text = sha or f"미확보 ({sha_reason})"
+    sha_text = sha or f"unknown ({sha_reason})"
     lines = [
         "# title",
-        f"one-shot {stage} 단계 실패: {item[:60]}",
+        f"one-shot {stage} stage failed: {item[:60]}",
         "",
         "# pre-condition",
-        f"- 대상 전체 SHA: {sha_text}",
-        f"- 실행 ID: `{run_id}`",
+        f"- Target full SHA: {sha_text}",
+        f"- Run ID: `{run_id}`",
         "",
         "# steps",
-        "근거: rules/one-shot.md#단계와-실패-처리 / 발생: one-shot 자동 기록",
+        "Source: rules/one-shot.md#stages-and-failure-handling / Origin: recorded automatically by one-shot",
         f"1. `{repro}`",
         "",
         "# actual result",
         key_line,
-        f"- 실패 단계·항목: {stage} / {mask(inner)}",
-        "- 오류 요약 (마스킹):",
+        f"- Failed stage / item: {stage} / {mask(inner)}",
+        "- Error summary (masked):",
         "```text",
         summary,
         "```",
-        "- 원인: 미확인",
-        "- 조치: 없음",
-        "- 재검증: 없음",
+        "- Cause: Unconfirmed",
+        "- Action: None",
+        "- Re-verification: None",
     ]
     if previous:
-        lines.append(f"- 이전 기록: `{_relative(root, previous)}` (closed, 재개하지 않음)")
+        lines.append(f"- Previous record: `{_relative(root, previous)}` (closed, not reopened)")
     lines += [
         occurrence,
         "",
         "# expected result",
-        f"- 같은 SHA에서 one-shot {stage} 단계가 통과한다. 해결·재검증 후 이 파일을 closed로 옮기고 priority 행을 제거한다.",
+        f"- The one-shot {stage} stage passes for the same SHA. After the fix is verified, move this file to closed and remove its priority row.",
         "",
         "# label",
         "SQA_sk_0_0_0",
@@ -186,9 +186,9 @@ def _record(root, run_dir, *, stage, sha, sha_reason, message, exc_type, repro, 
         f"OS: {sys.platform}",
         "hostname: TBD",
         "",
-        "# 담당자",
+        "# assignee",
         "",
     ]
     path.write_text("\n".join(lines), encoding="utf-8")
-    _add_priority(root, issue_id, f"one-shot 실패 자동 기록: {stage} / run {run_id}")
+    _add_priority(root, issue_id, f"one-shot failure recorded automatically: {stage} / run {run_id}")
     return path, True

@@ -33,7 +33,7 @@ STAGES = ("commit", "ci", "cd", "security", "push")
 TOGGLEABLE = ("ci", "cd", "security", "push")
 REQUIRES = {"cd": "ci", "security": "cd"}
 URGENT_OFF = ("ci", "cd", "security")
-# CI modules that inject keyboard input (rules/one-shot.md#키보드-사용-알림)
+# CI modules that inject keyboard input (rules/one-shot.md#keyboard-use-alert)
 KEYBOARD_MODULES = ("tests.e2e.ui",)
 LEVELS = ("patch", "minor", "major")
 
@@ -794,7 +794,7 @@ def report_failure(directory, stage, args, exc):
         failed = next((s for s in STAGES if stages.get(s) in ("failed", "running")), None)
         name = failed or stage or "setup"
         sha = state.get("sha")
-        reason = "commit 단계 이전 실패" if not stages.get("commit") or failed == "commit" else "state.json에 SHA 없음"
+        reason = "failed before the commit stage" if not stages.get("commit") or failed == "commit" else "no SHA in state.json"
         rel = directory.relative_to(ROOT).as_posix() if directory.is_relative_to(ROOT) else directory.name
         if stage:
             repro = f"scripts\\{stage}.cmd --run-dir {rel}"

@@ -1,4 +1,4 @@
-//! Runtime evidence log (rules/environment.md#증거-경로).
+//! Runtime evidence log (rules/environment.md#evidence-paths).
 //!
 //! Default path: `paths::APP_LOG` under the repository root found above the running exe
 //! (dev builds, tests); outside a repository (deployed exe) `skim-search.log` next to the exe.

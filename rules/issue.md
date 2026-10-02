@@ -1,148 +1,152 @@
-# issue — issue 작성·추적·완료 규칙
+# issue — writing, tracking and closing issues
 
-## 경로와 상태
+## Paths and states
 
 ```text
 issues/
-├─ backlog/   ← 착수 전
+├─ backlog/   ← not started
 │  └─ {function family}/{sub family}/{uuid:8}.md
-├─ working/   ← 실제 진행 중
+├─ working/   ← actually in progress
 │  └─ {function family}/{sub family}/{uuid:8}.md
-├─ closed/    ← 완료 또는 작업 중 생긴 일의 기록
+├─ closed/    ← done, or a record of an incident
 │  └─ {function family}/{sub family}/{uuid:8}.md
 └─ priority.md
 ```
 
-- 상태는 `backlog` / `working` / `closed` 폴더로 표시하고 issue 본문에 status 항목을 두지 않는다.
-- issue 경로는 `{function family}/{sub family}/{uuid:8}`이다. 상태 폴더는 참조에서 생략한다.
-- 상태 변경 시 issue 파일 하나만 같은 family/subfamily 경로로 이동한다. 폴더째 이동하지 않는다. 빈 폴더는 이동 후 삭제한다.
-- 모든 기존 issue도 UUID 파일명으로 이관한다. 상태 폴더, family, subfamily는 유지한다.
+- State is shown by the `backlog` / `working` / `closed` folder; issue bodies have no status field.
+- An issue path is `{function family}/{sub family}/{uuid:8}`. References omit the state folder.
+- On a state change move only the one issue file to the same family/subfamily path. Never move whole folders. Delete folders left empty.
+- All existing issues use UUID file names. State folder, family and subfamily are kept.
 
-## 이름과 UUID
+## Language
 
-- 모든 폴더 이름은 영어 ASCII. function family는 `families.md`의 snake_case 이름, sub family는 kebab-case로 쓴다.
-- 새 issue 파일명은 UUID 문자열의 앞 8자리 소문자 16진수로 한다. 실제 이름 예: `a1b2c3d4.md`. `{uuid:8}`은 규칙 표기이며 중괄호와 콜론은 파일명에 넣지 않는다.
-- ID 생성·배정 SSOT는 Git 공통 디렉터리의 `issue_ids.sqlite3` 한 개다. 생성 진입점은 `skim_search.diagnostics.issue_ids`(`cores/python/src/skim_search/diagnostics/issue_ids.py`)의 `get_issue_id()` 하나로 통일한다. CLI: `scripts\issue-id.cmd`.
-- 최초 초기화 트랜잭션에서만 `backlog` / `working` / `closed`의 기존 ID와 이전 예약 파일을 DB로 이관한다. 이후 전체 폴더 검색 없이 DB의 고유 키·트랜잭션으로 충돌 시 재생성하고 커밋 후 반환한다. 이전 예약 파일은 이관 커밋 후 제거한다. SQLite 임시 journal과 런타임 로그는 복구·검증용이며 ID 배정 SSOT가 아니다.
-- 모든 이슈 작성자가 이 API를 사용하며 DB를 삭제·재생성하거나 수동으로 ID를 배정하지 않는다. 초기화 이후 외부 이슈를 들여올 때는 배정 중단 상태에서 ID 등록·중복 검증을 먼저 수행한다. 별도 clone은 DB가 공유되지 않으므로 병합 전 등록·중복 검증이 필요하다.
-- 상태를 이동해도 UUID는 유지한다.
-- Windows 금지 문자 `\\ / : * ? " < > |`를 경로에 쓰지 않는다.
+- Issues and `priority.md` are written in English (`README.md#language`). UI strings, log lines and other text that must match the product stay verbatim in backticks.
 
-## 우선순위
+## Names and UUID
 
-| 등급 | 기준 |
-|------|------|
-| Critical | 데이터 손실 위험, 잘못된 파일 표시·수정·저장, 또는 핵심 Flow(handover §2)를 막아 즉시 처리해야 하는 문제 |
-| High | 필수 기능 또는 AC 실패로 주요 사용 흐름이 불완전하지만 Critical 기준에 해당하지 않는 문제 |
-| Normal | 사용성·표시 품질·진단·성능 목표 개선. 핵심 동작은 가능하지만 요구 품질에 미달하는 문제 |
-| Low | 선택 기능(`file:` 등), showreel 전용 요소, 요구가 확정되지 않은 `추정:` 항목 |
+- All folder names are English ASCII. function family = snake_case name from `families.md`, sub family = kebab-case.
+- A new issue file name is the first 8 lowercase hex characters of a UUID, e.g. `a1b2c3d4.md`. `{uuid:8}` is notation; braces and colon are not part of the file name.
+- The single SSOT for ID allocation is `issue_ids.sqlite3` in the Git common directory. The only allocation entry point is `get_issue_id()` in `skim_search.diagnostics.issue_ids` (`cores/python/src/skim_search/diagnostics/issue_ids.py`). CLI: `scripts\issue-id.cmd`.
+- Only the first initialization transaction imports existing IDs from `backlog` / `working` / `closed` and earlier reservation files into the DB. After that, unique keys and transactions resolve collisions without scanning folders, and the ID is returned after commit. Earlier reservation files are removed after the import commit. SQLite journals and runtime logs are for recovery/verification, not an ID SSOT.
+- Every issue author uses this API and never deletes/recreates the DB or assigns IDs by hand. When importing external issues after initialization, stop allocation and register/deduplicate IDs first. Separate clones do not share the DB, so register/deduplicate before merging.
+- The UUID stays the same across state moves.
+- Never use Windows-forbidden characters `\\ / : * ? " < > |` in paths.
 
-## 우선순위 목록
+## Priority
 
-`issues/priority.md`는 활성 UUID issue의 목록이며 다음 세 열만 사용한다.
+| Grade | Criteria |
+|-------|----------|
+| Critical | Risk of data loss, wrong file shown / modified / saved, or a blocked core flow (handover §2) that must be handled immediately |
+| High | A required feature or AC fails so a main flow is incomplete, but not Critical |
+| Normal | Usability, display quality, diagnostics, performance target improvements. Core behavior works but quality is below requirement |
+| Low | Optional features (`file:` etc.), showreel-only elements, unconfirmed `Assumption:` items |
 
-| 우선순위 | UUID | 근거 |
+## Priority list
+
+`issues/priority.md` lists active UUID issues with exactly three columns.
+
+| Priority | UUID | Source |
 |---|---|---|
-| Critical / High / Normal / Low | 8자리 소문자 16진수 | FR/AC, handover 절, showreel 시각 등 |
+| Critical / High / Normal / Low | 8 lowercase hex | FR/AC, handover section, showreel time, etc. |
 
-- 업무 제목이나 상태 열을 추가하지 않는다. 업무 내용은 개별 issue의 `title`에 둔다.
-- `backlog`와 `working` issue만 목록에 둔다. `closed`로 이동하면 행을 제거한다.
-- 목록은 등급(Critical → High → Normal → Low), 선행 의존, `families.md` 순으로 정렬한다.
-- 각 행의 근거는 대응하는 개별 issue의 `steps`에 적힌 요구사항 근거와 일치해야 한다.
+- No title or status column. The work content is the issue's `title`.
+- Only `backlog` and `working` issues are listed. Remove the row when the issue moves to `closed`.
+- Sort by grade (Critical → High → Normal → Low), then prerequisites, then `families.md` order.
+- Each row's source must match the requirement source in that issue's `steps`.
 
-## 분할 원칙
+## Splitting
 
-- issue 하나는 PASS/FAIL 판정 가능한 결과 하나를 다룬다.
-- AC 하나 이하 또는 FR 1~2개에 대응한다. 초과하면 분리한다.
-- 문법 token은 token 단위 분리 가능 (`!path:`와 `!ext:` 등).
-- UI 구성과 동작은 분리한다.
-- showreel에서 확인한 결함은 관찰 1건당 issue 하나로 작성한다.
-- handover가 명시한 구현 제약만 인용하고 구현 방법은 강제하지 않는다.
-- handover §33 금지사항을 요구하는 issue는 만들지 않는다.
-- `backlog` / `working` / `closed` 전체에서 같은 FR/AC를 다룬 기존 issue를 확인해 중복을 피한다.
+- One issue covers one result that can be judged PASS/FAIL.
+- At most one AC or 1–2 FRs. Split if more.
+- Syntax tokens may be split per token (`!path:` and `!ext:` etc.).
+- Separate UI composition from behavior.
+- One issue per defect observed in the showreel.
+- Cite only implementation constraints stated by handover; do not prescribe implementation.
+- Never create issues that require handover §33 prohibitions.
+- Check existing issues in `backlog` / `working` / `closed` for the same FR/AC to avoid duplicates.
 
-## 작성 절차
+## Writing procedure
 
-1. `sources.md` 기준으로 handover FR/AC 및 showreel에서 검증 단위를 찾는다.
-2. `families.md`에서 family를 정하고 sub family 이름을 정한다.
-3. 이 문서의 우선순위 기준으로 등급을 정한다.
-4. `#이름과-UUID`의 `get_issue_id()`로 새 ID를 예약한다.
-5. 제안 목록(경로 + title + 등급 + 근거)을 먼저 보고하고 승인 후 파일을 만든다.
-6. `issues/priority.md`에 우선순위·UUID·근거 행을 추가한다.
+1. Find verification units in handover FR/AC and the showreel per `sources.md`.
+2. Choose the family in `families.md` and name the sub family.
+3. Choose the grade by `#priority`.
+4. Reserve a new ID with `get_issue_id()` (`#names-and-uuid`).
+5. Report the proposal (path + title + grade + source) first; create files after approval (or when the user asks directly, e.g. "add issue").
+6. Add a priority · UUID · source row to `issues/priority.md`.
 
-## 상태 전이와 착수
+## State transitions and start
 
 ```text
-issues/backlog/… ──착수──▶ issues/working/… ──PASS──▶ issues/closed/…
+issues/backlog/… ──start──▶ issues/working/… ──PASS──▶ issues/closed/…
 ```
 
-- 착수 전 `추정:` issue가 아닌지 확인한다. 요구가 미확정이면 착수하지 않는다.
-- 기본은 한 번에 issue 하나만 `backlog`에서 `working`으로 옮긴다. 코드 변경을 묶는 편이 효율적이면 issue 목록과 사유를 먼저 보고한다.
-- `working`에는 실제 진행 중인 issue만 둔다.
-- 착수 순서는 `issues/priority.md`를 따른다. 같은 등급에서는 선행 의존을 먼저 처리하고, 의존이 없으면 `families.md` 순서를 따른다.
-- 사용자가 특정 issue를 지목했는데 이미 `closed`이면 재개하거나 재작업하지 않는다. `priority.md`에서 그 issue를 건너뛰고, 착수 가능한 다음 `backlog` issue를 선택해 진행한다. 이후 항목도 모두 `closed`이면 다음으로 우선순위가 높은 `backlog` issue를 찾고, 활성 `backlog`가 없을 때만 완료 상태를 보고한다.
-- 수정 대상 파일과 이유를 편집 전에 보고한다.
+- Before starting, confirm the issue is not an `Assumption:` issue. Do not start unconfirmed requirements.
+- By default move one issue at a time from `backlog` to `working`. If bundling code changes is more efficient, report the issue list and reason first.
+- `working` holds only issues actually in progress.
+- Start order follows `issues/priority.md`. Within a grade, prerequisites first, then `families.md` order.
+- If the user names an issue that is already `closed`, do not reopen or redo it. Skip it in `priority.md` and take the next startable `backlog` issue; if all following items are `closed`, take the next highest-priority `backlog` issue, and report completion only when no active `backlog` issue remains.
+- Report target files and reasons before editing.
 
-## 완료 조건과 보고
+## Completion and report
 
-- 모든 expected result가 PASS이고 증거가 있어야 완료다. FAIL이 남으면 issue를 `working`에 둔다.
-- 의존 issue 때문에 직접 검증할 수 없으면 대체 검증 방법과 의존 issue를 기록하고 판단을 요청한다.
-- 완료 시 build, `cargo test`, `cargo clippy` 결과를 `ref/actual/logs/`에 저장하고 필요한 e2e·화면 증거를 모은다.
-- issue의 `actual result`를 실측 결과와 증거 경로로 갱신한 뒤 `closed`로 이동하고 `priority.md` 행을 제거한다.
-- 완료 보고에는 결론, expected result별 판정과 증거, 변경 파일, 미검증 항목과 이유, 기록 issue, 다음 착수 대상을 포함한다.
+- An issue is done only when every expected result is PASS with evidence. If anything FAILs, keep it in `working`.
+- If a dependency prevents direct verification, record the alternative verification and the dependency issue, and ask for a decision.
+- On completion save build, `cargo test` and `cargo clippy` results in `ref/actual/logs/` and collect needed e2e / screen evidence.
+- Update the issue's `actual result` with measured results and evidence paths, move it to `closed`, and remove its `priority.md` row.
+- The completion report contains: conclusion, verdict and evidence per expected result, changed files, unverified items and why, incident issues, next issue to start.
 
-## 파일 템플릿
+## File template
 
-섹션명과 순서는 바꾸지 않는다.
+Do not change section names or order.
 
 ```markdown
 # title
-{한 줄, 80자 이내}
+{one line, at most 80 characters}
 
 # pre-condition
-{실행 상태, 검색 경로, 테스트 데이터 등}
+{run state, search root, test data, etc.}
 
 # steps
-근거: FR-xxx, AC-xxx (handover §n) / showreel 00:SS
+Source: FR-xxx, AC-xxx (handover §n) / showreel 00:SS
 1. ...
 
 # actual result
-{현재 동작. 미구현이면 "미구현"}
+{current behavior. "Not implemented" if not implemented}
 
 # expected result
-{PASS 판정 기준. 측정값이 필요하면 수치와 확인 위치 명시}
+{PASS criteria. Give values and where they are checked when measurements are needed}
 
 # label
 SQA_sk_0_0_0
 
 # environment
-OS: windows 10 pro
+OS: Windows 11 Pro
 hostname: TBD
 
-# 담당자
+# assignee
 ```
 
-### 필드와 근거
+### Fields and sources
 
-- `steps` 첫 줄에는 FR/AC/handover 절/showreel 시각 근거를 쓴다. 기록 issue는 `발생: {issue 경로}`도 쓴다.
-- showreel 관찰은 관찰 내용 그대로 적고 해석은 `추정:`으로 분리한다.
-- 작업 issue 완료 시 `actual result`는 실측 결과와 증거 경로로 바꾼다.
-- expected result는 로그 등 런타임 증거로 검증 가능하게 쓴다. 성능 목표는 목표와 실측 기록 위치를 함께 적고, 미달도 보고한다.
-- 별도 pre-condition이 없으면 아래 공통 테스트 workspace를 쓴다.
-- `label` 기본값은 `SQA_sk_0_0_0`이다.
+- The first line of `steps` gives the FR/AC/handover section/showreel time source. Incident issues also give `Origin: {issue path}`.
+- Write showreel observations as observed; separate interpretations with `Assumption:`.
+- When a work issue is done, `actual result` becomes measured results and evidence paths.
+- Write expected results so runtime evidence (logs etc.) can verify them. For performance targets give the target and where measurements are recorded, and report misses too.
+- Without a specific pre-condition use the common test workspace below.
+- `label` default is `SQA_sk_0_0_0`.
 
-### 공통 테스트 workspace
+### Common test workspace
 
-공통 검색 fixture는 `cores/rust/tests/fixtures/sample/tree/`에 커밋한다. Rust·Python 테스트는 이를 임시 경로에 복사해 쓰고 fixture 원본은 변경하지 않는다. scope 전용 추가 파일은 해당 테스트 코드에서 만든다.
+The common search fixture is committed in `cores/rust/tests/fixtures/sample/tree/`. Rust and Python tests copy it to a temporary path and never modify the original. Scope-specific extra files are created by the test code.
 
-## 작업 중 생긴 일
+## Incidents
 
-제품 결함·사고·환경 제약·절차 실수·도구 오류·빌드/테스트 실패는 예외 없이 발생 즉시, 늦어도 해당 작업 완료 보고 전까지 기록 issue로 남긴다. 기록 issue는 항상 `closed`에 둔다.
+Product defects, accidents, environment constraints, procedure mistakes, tool errors and build/test failures are always recorded as incident issues right away, at the latest before the work's completion report. Incident issues always live in `closed`.
 
-- family는 제품 결함이면 해당 기능, 검증 도구면 `diagnostics`, 환경이면 `build_env`, 절차 실수면 `process`로 한다.
-- 기록 issue의 `steps`에 `발생: {issue 경로}`를 쓴다.
-- `actual result`는 `발생` / `원인` / `조치` / `결과`(PASS 또는 `미해결`) / `재발 방지` 순서로 쓴다.
-- expected result에는 해당 일이 없었을 때의 정상 동작을 쓴다.
-- 미해결이면 `결과: 미해결`로 두고 해결용 issue를 `backlog`에 별도로 작성해 서로 경로를 기록한다.
-- 재발 방지책이 규칙이면 이 문서에 반영한다.
-- 예외 — one-shot 실패: pipeline이 `backlog/diagnostics/one-shot-failure/{uuid:8}.md` 하나를 자동 생성하고 `priority.md`에 등록한다. 이 이슈가 실패의 SSOT이며(`failure.json` 없음) 발생 당시 closed 기록을 따로 만들지 않는다. 같은 SHA(이슈 기록·생성 증거만 다른 SHA 포함)·단계·항목의 활성 이슈에는 재발 내역만 추가한다. 해결·재검증 후 같은 파일을 closed로 옮기고 행을 제거한다. closed 이슈는 재개하지 않고 재발 시 새 이슈에서 연결한다 (`one-shot.md#실패-이슈`).
+- family: the feature for product defects, `diagnostics` for verification tools, `build_env` for environment, `process` for procedure mistakes.
+- `steps` of an incident issue contains `Origin: {issue path}`.
+- `actual result` is written as `Occurred` / `Cause` / `Action` / `Result` (PASS or `Unresolved`) / `Prevention`, in that order.
+- expected result describes normal behavior had the incident not happened.
+- If unresolved, set `Result: Unresolved`, write a separate fix issue in `backlog`, and record each other's path.
+- If the prevention is a rule, add it to the owning rules file.
+- Exception — one-shot failures: the pipeline creates one `backlog/diagnostics/one-shot-failure/{uuid:8}.md` automatically and registers it in `priority.md`. That issue is the failure SSOT (no `failure.json`); no separate closed record is written at failure time. Active issues with the same SHA (including SHAs that differ only in issue records / generated evidence), stage and item only get a recurrence entry. After the fix is verified, move the same file to closed and remove the row. Closed issues are never reopened; a recurrence gets a new issue that links them (`one-shot.md#failure-issues`).
