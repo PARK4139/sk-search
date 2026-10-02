@@ -125,6 +125,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(state["stages"], {s: "passed" for s in p.STAGES})
         self.assertEqual(state["assignment"]["version"], "0.1.1")
         self.assertEqual(state["push"]["result"], "pushed")
+        self.assertEqual(self.registry()[state["sha"]]["status"], "released")
         self.assertEqual(self.git("ls-remote", "origin", "refs/heads/master").split()[0], state["sha"])
         self.assertTrue(Path(state["release"]).exists())
         self.assertEqual(Path(state["release"]).parent, self.shared / REL["RELEASES"])  # 3rd_party/skim-search/{SHA}
@@ -140,6 +141,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout.decode(errors="replace") + proc.stderr.decode(errors="replace"))
         state = p.read_json(self.logs / "state.json")
         self.assertNotIn("push", state["stages"])
+        self.assertEqual(self.registry()[state["sha"]]["status"], "reserved")  # not pushed: not released
         self.assertEqual(self.git("ls-remote", "origin", "refs/heads/master").split()[0], self.base)
 
     def test_bump_levels_and_same_sha_reuse_conflict(self):
@@ -152,6 +154,83 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.run.state["assignment"]["version"], "0.1.1")
         with self.assertRaises(p.Failure):
             p.assign_version(self.run, "major")
+
+    # ── version reservations (diagnostics/one-shot-version-on-failure/d6b840a2) ──
+    def commit_change(self, text):
+        (self.root / "change.txt").write_text(text, encoding="utf-8")
+        self.git("add", ".")
+        self.git("commit", "-m", text)
+        run = p.Run(self.cfg, self.logs / text)
+        run.state["sha"] = self.git("rev-parse", "HEAD")
+        return run
+
+    def registry(self):
+        return {e["sha"]: e for e in p.read_json(self.shared / REL["VERSIONS"])["entries"]}
+
+    def dead_pid(self):
+        proc = subprocess.Popen([sys.executable, "-c", "pass"])
+        proc.wait()
+        return proc.pid
+
+    def end_run(self, run):
+        # the owning one-shot process ended without pushing
+        store = self.shared / REL["VERSIONS"]
+        data = p.read_json(store)
+        for e in data["entries"]:
+            if e["sha"] == run.state["sha"]:
+                e["pid"] = self.dead_pid()
+        p.write_json(store, data)
+
+    def test_failed_run_does_not_consume_version(self):
+        failed = self.commit_change("failed")
+        p.assign_version(failed, "patch")
+        self.assertEqual(failed.state["assignment"]["version"], "0.1.1")
+        self.assertEqual(self.registry()[failed.state["sha"]]["status"], "reserved")
+        self.end_run(failed)
+        fixed = self.commit_change("fixed")
+        p.assign_version(fixed, "patch")
+        self.assertEqual(fixed.state["assignment"]["version"], "0.1.1")  # no gap
+        entries = self.registry()
+        self.assertEqual(entries[failed.state["sha"]]["status"], "superseded")
+        self.assertFalse(entries[failed.state["sha"]]["package_published"])
+        p.release_version(fixed)
+        self.assertEqual(self.registry()[fixed.state["sha"]]["status"], "released")
+        nxt = self.commit_change("next")
+        p.assign_version(nxt, "minor")
+        self.assertEqual(nxt.state["assignment"]["version"], "0.2.0")
+
+    def test_reservation_reused_for_same_sha_and_released_never_reused(self):
+        run = self.commit_change("retry")
+        p.assign_version(run, "patch")
+        self.end_run(run)
+        retry = p.Run(self.cfg, self.logs / "retry2")
+        retry.state["sha"] = run.state["sha"]
+        p.assign_version(retry, None)  # same SHA: same reservation, even after its run ended
+        self.assertEqual(retry.state["assignment"]["version"], "0.1.1")
+        self.assertEqual(len(self.registry()), 1)
+        p.release_version(retry)
+        self.end_run(retry)
+        other = self.commit_change("other")
+        p.assign_version(other, "patch")
+        self.assertEqual(other.state["assignment"]["version"], "0.1.2")
+
+    def test_live_reservation_is_not_reused(self):
+        first = self.commit_change("first")
+        p.assign_version(first, "patch")  # owner = this (live) test process
+        second = self.commit_change("second")
+        p.assign_version(second, "patch")
+        self.assertEqual(second.state["assignment"]["version"], "0.1.2")
+        self.assertEqual(self.registry()[first.state["sha"]]["status"], "reserved")
+
+    def test_legacy_entries_without_status_are_released(self):
+        legacy = self.commit_change("legacy")
+        p.write_json(self.shared / REL["VERSIONS"], {"entries": [
+            {"level": "patch", "reason": "old", "base_sha": self.base, "target_sha": legacy.state["sha"],
+             "decision_by": "user", "sha": legacy.state["sha"], "version": "0.3.4", "assigned_at": "old"}]})
+        new = self.commit_change("after-legacy")
+        p.assign_version(new, "patch")
+        self.assertEqual(new.state["assignment"]["version"], "0.3.5")
+        self.assertEqual(new.state["assignment"]["base_sha"], legacy.state["sha"])
 
     def test_failure_stops_successors(self):
         self.change()

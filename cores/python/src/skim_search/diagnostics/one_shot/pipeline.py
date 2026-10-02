@@ -284,30 +284,98 @@ def classify(run, base, target, bump=None):
         raise Failure(f"agent classification failed: {exc}") from exc
 
 
+def owner_pid():
+    """The outermost one-shot process; nested stage processes inherit it (SKIM_ONE_SHOT_PID)."""
+    return int(os.environ.get("SKIM_ONE_SHOT_PID") or os.getpid())
+
+
+def pid_alive(pid):
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    import ctypes
+    handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return False
+    try:
+        code = ctypes.c_ulong()
+        ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        return code.value == 259  # STILL_ACTIVE
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+
+
+def version_key(value):
+    return tuple(map(int, value.split(".")))
+
+
+def entry_status(entry):
+    return entry.get("status", "released")  # entries written before reservations existed were final
+
+
 def assign_version(run, bump):
+    """Reserve a version for the SHA; only a successful push releases (finalizes) it.
+
+    Next number = bump(highest of released versions and reservations of live runs). Reservations of
+    runs that ended without pushing are superseded, so failed runs do not leave gaps.
+    """
     if bump is not None and bump not in LEVELS:
         raise Failure("invalid classification level")
     store = Path(run.cfg["third_party"]) / REL["VERSIONS"]
     with lock(store.with_suffix(".lock"), run.cfg["lock_timeout_seconds"]):
         registry = read_json(store) if store.exists() else {"entries": []}
         entries = registry["entries"]
-        if len({e["sha"] for e in entries}) != len(entries) or len({e["version"] for e in entries}) != len(entries):
+        sha = run.state["sha"]
+        for e in entries:
+            if entry_status(e) == "reserved" and e["sha"] != sha and not pid_alive(e.get("pid", -1)):
+                e.update(status="superseded", superseded_at=now(),
+                         package_published=(Path(run.cfg["third_party"]) / REL["RELEASES"] / e["sha"]).is_dir())
+                run.event(event="version_superseded", sha=e["sha"], version=e["version"])
+        active = [e for e in entries if entry_status(e) != "superseded"]
+        if len({e["sha"] for e in active}) != len(active) or len({e["version"] for e in active}) != len(active):
             raise Failure("duplicate SHA/version registry")
-        existing = next((e for e in entries if e["sha"] == run.state["sha"]), None)
+        existing = next((e for e in active if e["sha"] == sha), None)
         if existing:
             if bump and existing["level"] != bump:
                 raise Failure("--bump conflicts with existing SHA")
+            if entry_status(existing) == "reserved":
+                existing.update(pid=owner_pid(), run_id=run.state["run_id"])
             run.state["assignment"] = existing
             run.event(event="version_reused", **existing)
         else:
-            base = entries[-1]["sha"] if entries else run.git("rev-parse", run.cfg["initial_base_sha"] + "^{commit}")
-            prior = entries[-1]["version"] if entries else run.cfg["initial_version"]
-            data = classify(run, base, run.state["sha"], bump)
-            entry = {**data, "sha": run.state["sha"], "version": bump_version(prior, data["level"]), "assigned_at": now()}
+            released = [e for e in active if entry_status(e) == "released"]
+            last = max(released, key=lambda e: version_key(e["version"]), default=None)
+            base = last["sha"] if last else run.git("rev-parse", run.cfg["initial_base_sha"] + "^{commit}")
+            prior = max((e["version"] for e in active), key=version_key, default=run.cfg["initial_version"])
+            data = classify(run, base, sha, bump)
+            entry = {**data, "sha": sha, "version": bump_version(prior, data["level"]), "assigned_at": now(),
+                     "status": "reserved", "pid": owner_pid(), "run_id": run.state["run_id"]}
             entries.append(entry)
-            write_json(store, registry)
             run.state["assignment"] = entry
             run.event(event="version_assigned", **entry)
+        write_json(store, registry)
+    run.save()
+
+
+def release_version(run):
+    """After a verified push: the reservation becomes the released version."""
+    store = Path(run.cfg["third_party"]) / REL["VERSIONS"]
+    with lock(store.with_suffix(".lock"), run.cfg["lock_timeout_seconds"]):
+        registry = read_json(store)
+        entry = next((e for e in registry["entries"]
+                      if e["sha"] == run.state["sha"] and entry_status(e) != "superseded"), None)
+        if not entry or entry["version"] != run.state["assignment"]["version"]:
+            raise Failure("pushed SHA has no matching version reservation")
+        if entry_status(entry) != "released":
+            entry.update(status="released", released_at=now())
+            for key in ("pid", "run_id"):
+                entry.pop(key, None)
+            write_json(store, registry)
+        run.state["assignment"] = entry
+    run.event(event="version_released", sha=entry["sha"], version=entry["version"])
     run.save()
 
 
@@ -587,6 +655,7 @@ def push(run):
     run.state["push"] = {"remote": cfg["remote"], "branch": cfg["branch"], "sha": sha, "time": now(), "result": "pushed"}
     run.event(event="pushed", remote=cfg["remote"], branch=cfg["branch"], sha=sha)
     run.save()
+    release_version(run)
 
 
 def execute_stage(run, stage, bump=None):
@@ -634,7 +703,8 @@ def main(stage=None):
                 if stage:
                     execute_stage(run, stage, args.bump)
                 else:
-                    env = dict(os.environ, SKIM_ONE_SHOT_PARENT=str(directory))
+                    # children inherit the owner PID: a version reservation lives as long as this process
+                    env = dict(os.environ, SKIM_ONE_SHOT_PARENT=str(directory), SKIM_ONE_SHOT_PID=str(owner_pid()))
                     for name in STAGES[:STAGES.index(args.stop_after) + 1]:
                         command = [STAGE_SCRIPTS / (name + ".cmd"),
                                    "--config", args.config.resolve(), "--run-dir", directory]
