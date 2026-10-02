@@ -35,9 +35,9 @@ Source: rules/one-shot.md#stages-and-failure-handling / Origin: recorded automat
 13:17:58.052 removed workspace C:\Users\Public\skim-search-e2e exists=False
 13:17:58.053 e2e_ui summary: pass=8 warn=0 fail=1
 ```
-- Cause: Unconfirmed
-- Action: None
-- Re-verification: None
+- Cause: no product or pipeline defect. The user needed the keyboard and interrupted this normal run during the CI UI e2e (`tests.e2e.ui`); the e2e module exited 1, so CI failed. Everything before it passed (cargo build/test/clippy, Python tests, e2e detection; latency within target in the summary above).
+- Action: the same commit fadb554 was pushed with `scripts\one-shot.cmd --urgent-backup` (run `20261002-131822-9ebdc3ec`, security_policy passed, origin/main == 35604c0). Screenshot changes left by the interrupted e2e were reverted.
+- Re-verification: PASS for the pipeline behavior — the interrupted run's version reservation behaved as designed: `version_superseded` 0.7.1 of the earlier failed SHA 7adc027, then a new reservation for fadb554 (diagnostics/one-shot-version-on-failure). A full normal run (including UI e2e) is deferred to a time when the keyboard is free.
 - Occurred 2026-10-02T13:17:58+09:00: run `20261002-131635-3158b004`, SHA fadb554f92bbb64bc7aef74cf9b218135f9573b9, exit code 1, evidence `ref/actual/logs/one-shot/20261002-131635-3158b004/command-ff4527531a98.stderr.log, command-ff4527531a98.stdout.log`
 
 # expected result
