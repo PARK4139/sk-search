@@ -2,7 +2,7 @@ param([Parameter(Mandatory=$true)][string]$Module, [string[]]$Arguments)
 # Thin bridge: run a skim_search module in the uv project cores/python (logic lives in Python).
 $ErrorActionPreference = 'Stop'
 try {
-    $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+    $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
     $uv = (Get-Command uv -ErrorAction SilentlyContinue).Source
     $ancestor = [System.IO.DirectoryInfo]$repo
     while (-not $uv -and $ancestor) {

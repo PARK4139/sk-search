@@ -2,9 +2,9 @@
 
 ## 실행 구조
 
-- 사용자 진입점은 `scripts\one-shot.cmd`이다. `scripts\one-shot.cmd` → `scripts\one-shot.ps1` → `scripts\one_shot\launch.ps1` → `python -m skim_search.diagnostics.one_shot` 순으로 호출한다.
+- 사용자 진입점은 `scripts\one-shot.cmd`이다. `scripts\one-shot.cmd` → `scripts\one-shot.ps1` → `scripts\launch.ps1` → `python -m skim_search.diagnostics.one_shot` 순으로 호출한다.
 - pipeline(`cores/python/src/skim_search/diagnostics/one_shot/pipeline.py`)은 `commit` → `ci`(빌드·테스트·검사) → `cd`(배포) → `security` → `push` 순서로 실행한다.
-- 각 단계는 독립 실행 가능한 `scripts\one_shot\{stage}.cmd` → `{stage}.ps1` → `python -m skim_search.diagnostics.one_shot.{stage}` 호출 구조를 제공한다. stage는 `commit`, `ci`, `cd`, `security`, `push`이다.
+- 각 단계는 독립 실행 가능한 `scripts\{stage}.cmd` → `{stage}.ps1` → `python -m skim_search.diagnostics.one_shot.{stage}` 호출 구조를 제공한다. stage는 `commit`, `ci`, `cd`, `security`, `push`이다.
 
 ## 사용법
 
@@ -12,10 +12,10 @@
 - 설정: `configs/one-shot.json` (remote, branch, commit_paths, commit_message, initial_version, initial_base_sha, 도구 경로, 시간 제한). 필수 설정이 없으면 실행 전에 실패한다.
 - 전체 실행: `scripts\one-shot.cmd` (에이전트 분류) 또는 `scripts\one-shot.cmd --bump patch|minor|major`. 결과: `PASS through push; push: pushed; logs: ref\actual\logs\one-shot\{run}`.
 - push 직전까지: `scripts\one-shot.cmd --bump patch --stop-after security`.
-- 단계 독립 실행: `scripts\one_shot\{stage}.cmd --run-dir ref\actual\logs\one-shot\{run}` (앞 단계가 통과한 실행에만 적용).
+- 단계 독립 실행: `scripts\{stage}.cmd --run-dir ref\actual\logs\one-shot\{run}` (앞 단계가 통과한 실행에만 적용).
 - 자체 테스트: `cores\python` 에서 `uv run --locked python -m unittest tests.one_shot.test_pipeline` (임시 bare 원격만 사용). `scripts\test.cmd`에도 포함.
 - pipeline은 각 단계의 `.cmd` 진입점을 호출해 독립 실행과 같은 경로를 사용한다.
-- 진입점(.cmd/.ps1)은 `scripts/`, 로직은 `cores/python/src/skim_search/diagnostics/one_shot/`에 둔다. `one-shot.cmd`와 `one-shot.ps1`의 이름은 사용자 지정 예외이며 Python 파일은 snake_case로 한다.
+- 진입점(.cmd/.ps1)은 `scripts/` 한 단계에 모두 둔다(하위 폴더 없음: `one-shot`, `{stage}`, `launch.ps1`, `test`, `security-policy`, `issue-id`). 로직은 `cores/python/src/skim_search/diagnostics/one_shot/`에 둔다. `one-shot.cmd`와 `one-shot.ps1`의 이름은 사용자 지정 예외이며 Python 파일은 snake_case로 한다.
 
 ## 언어별 책임
 

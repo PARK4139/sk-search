@@ -26,7 +26,7 @@ from skim_search import REL
 
 HERE = Path(__file__).resolve().parent
 ROOT = Path(paths.ROOT)
-STAGE_SCRIPTS = Path(paths.ONE_SHOT_SCRIPTS)
+STAGE_SCRIPTS = Path(paths.SCRIPTS)  # scripts/{stage}.cmd
 STAGES = ("commit", "ci", "cd", "security", "push")
 # CI modules that inject keyboard input (rules/one-shot.md#키보드-사용-알림)
 KEYBOARD_MODULES = ("tests.e2e.ui",)
@@ -738,7 +738,7 @@ def report_failure(directory, stage, args, exc):
         reason = "commit 단계 이전 실패" if not stages.get("commit") or failed == "commit" else "state.json에 SHA 없음"
         rel = directory.relative_to(ROOT).as_posix() if directory.is_relative_to(ROOT) else directory.name
         if stage:
-            repro = f"scripts\\one_shot\\{stage}.cmd --run-dir {rel}"
+            repro = f"scripts\\{stage}.cmd --run-dir {rel}"
         else:
             repro = "scripts\\one-shot.cmd" + (f" --bump {args.bump}" if args.bump else "") + \
                 (f" --stop-after {args.stop_after}" if args.stop_after != "push" else "")

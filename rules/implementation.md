@@ -7,7 +7,7 @@
 ```text
 .cargo/config.toml   ← [build] target-dir = "target" (cargo가 정한 위치라 루트)
 configs/             ← 프로젝트가 읽는 설정: one-shot.json, security-exceptions.json
-scripts/             ← 실행 진입점만 (.cmd → .ps1 → Python 모듈). 로직 없음
+scripts/             ← 실행 진입점만 (.cmd → .ps1 → Python 모듈). 로직 없음, 하위 폴더 없음
 cores/rust/          ← Cargo workspace (Rust 관례)
 cores/python/        ← uv 프로젝트 (Python 관례, src layout, 패키지 skim_search)
 cores/common/        ← 언어 중립 SSOT (build_env/paths-ssot)
